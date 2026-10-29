@@ -9,6 +9,7 @@
   "scripts": {
     "test": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-installation.ps1",
     "test:runtime": "node scripts/test-runtime.cjs",
+    "build:release": "python scripts/build-release.py --output-dir dist",
     "doctor": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/doctor.ps1",
     "audit:release": "node scripts/release-audit.cjs",
     "install:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",

@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const skip = new Set(['.git', 'node_modules', '.local-test']);
+const skip = new Set(['.git', 'node_modules', '.local-test', 'dist']);
 const blockedDirs = new Set(['data', 'runtime', 'logs', 'backups', 'profile', 'profiles', '.codex', 'sessions', 'archived_sessions']);
 const blockedNames = /^(?:auth(?:\..*)?\.json|credentials.*|tokens.*|relations\.json|runtime-status\.json|start-status\.json|ui-preferences\.json|runtime-options\.json|stop-request.*\.json|deployment\.json|release\.json|disabled\.json|codex\.ico|\.cncc-(?:install|data)\.json)$/i;
 const blockedExt = /\.(?:db(?:-.*)?|sqlite(?:3)?(?:-.*)?|lnk|log)$/i;
