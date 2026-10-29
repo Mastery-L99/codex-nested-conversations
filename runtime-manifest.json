@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    "enhance-current.cjs",
+    "runtime-main.cjs",
+    "event-index.cjs",
+    "preload-relay.cjs",
+    "host-events.js",
+    "nested-ui.js",
+    "cascade-actions.js",
+    "sync-relations.py",
+    "open-local-chat.py",
+    "chat-is-archived.py",
+    "Start-NestedConversations.ps1",
+    "Stop-NestedConversations.ps1"
+  ],
+  "startScript": "Start-NestedConversations.ps1",
+  "stopScript": "Stop-NestedConversations.ps1",
+  "companionScript": "enhance-current.cjs",
+  "contract": "docs/runtime-integration.md"
+}

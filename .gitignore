@@ -1,0 +1,61 @@
+# Dependencies and packaging
+node_modules/
+*.tgz
+dist/
+coverage/
+test-results/
+playwright-report/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local.*
+.npmrc
+auth.json
+auth.*.json
+credentials*
+tokens*
+
+# Official app data, personal history, and generated runtime files
+.codex/
+profile/
+profiles/
+sessions/
+archived_sessions/
+data/
+runtime/
+logs/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+relations.json
+runtime-status.json
+start-status.json
+ui-preferences.json
+runtime-options.json
+stop-request*.json
+deployment.json
+release.json
+disabled.json
+*acceptance*.json
+*readback*.json
+.cncc-install.json
+.cncc-data.json
+codex.ico
+*.lnk
+
+# Python and editor output
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db
+
+# Local verification artifacts
+.local-test/
