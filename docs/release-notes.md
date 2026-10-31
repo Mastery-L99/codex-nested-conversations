@@ -1,5 +1,19 @@
 # Release notes / 发行说明
 
+## 0.3.0-preview.6
+
+默认插件新增「嵌套对话」目录，可作为官方插件全屏页面或聊天侧面板使用。目录支持主聊天聚焦、搜索、展开子孙和打开本机聊天。持久父子记录优先于冲突的创建历史，历史不可用时显示部分目录。原项目列表的折叠树仍由可选的完整增强提供。
+
+Windows 安装支持给 Codex 或其他本机 Agent 一句话。脚本校验发布包，通过官方 CLI 回读登记结果，也提供只读的 `--check`。Windows 商店仍负责官方客户端的更新。[一键安装指令](install-agent.md) · [更新与兼容性](faq.zh-CN.md)
+
+The default plugin adds a nested chat browser on the official plugin and conversation panel surfaces. Search, focus a root, expand descendants, or request navigation to a local chat. The optional full install adds the original-list adapter. Windows agents can install the pinned release or check the registered version using the [agent installation guide](install-agent.md).
+
+## 0.3.0-preview.5
+
+本版提供完整源码包和可独立安装的归档插件包。原侧栏在增强入口启动后，按父子关系显示最近聊天和项目聊天。批量归档支持筛选、跨分支勾选，确认页分别列出聊天和受影响的后台任务。工具栏能通过当前窗口归档它自己持有的空闲聊天。已归档数量按本机回读结果显示。
+
+The full source package adds the nested sidebar and toolbar archive. The smaller marketplace ZIP installs the standalone archive page using the official plugin CLI. The sidebar needs the project's desktop shortcut. Both packages use the user's existing Windows client and account. The tested official package is `26.1027.3384.0`. See the [English guide](quickstart.md) or [中文指南](quickstart.zh-CN.md).
+
 ## 0.2.0-preview.1
 
 ### English

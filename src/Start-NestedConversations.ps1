@@ -17,7 +17,7 @@ $env:CNCC_NODE=$taskNode
 $env:CNCC_PYTHON=$taskPython
 $env:CNCC_DATA_DIR=$taskData
 $taskScript=Join-Path $PSScriptRoot 'enhance-current.cjs'
-foreach($taskRequired in @($taskExe,$taskNode,$taskPython,$taskScript,(Join-Path $PSScriptRoot 'runtime-main.cjs'),(Join-Path $PSScriptRoot 'event-index.cjs'),(Join-Path $PSScriptRoot 'preload-relay.cjs'),(Join-Path $PSScriptRoot 'host-events.js'),(Join-Path $PSScriptRoot 'nested-ui.js'),(Join-Path $PSScriptRoot 'cascade-actions.js'),(Join-Path $PSScriptRoot 'sync-relations.py'),(Join-Path $PSScriptRoot 'open-local-chat.py'),(Join-Path $PSScriptRoot 'chat-is-archived.py'))){
+foreach($taskRequired in @($taskExe,$taskNode,$taskPython,$taskScript,(Join-Path $PSScriptRoot 'runtime-main.cjs'),(Join-Path $PSScriptRoot 'module-state.cjs'),(Join-Path $PSScriptRoot 'windows-mutex.cjs'),(Join-Path $PSScriptRoot 'ui-modules.js'),(Join-Path $PSScriptRoot 'event-index.cjs'),(Join-Path $PSScriptRoot 'preload-relay.cjs'),(Join-Path $PSScriptRoot 'sync-relations.py'),(Join-Path $PSScriptRoot 'open-local-chat.py'),(Join-Path $PSScriptRoot 'chat-is-archived.py'))){
     if(-not(Test-Path -LiteralPath $taskRequired -PathType Leaf)){throw ('缺少文件：'+$taskRequired)}
 }
 $taskMain=@(Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'" | Where-Object {$_.ExecutablePath -eq $taskExe -and $_.CommandLine -notmatch '(?:^|\s)--type='})
@@ -78,11 +78,18 @@ do {
     try {
         $taskStatus=Get-Content -LiteralPath (Join-Path $taskData 'runtime-status.json') -Raw | ConvertFrom-Json
         $taskOwner=Get-CimInstance Win32_Process -Filter ('ProcessId='+$taskStatus.processId)
-        $taskReady=($taskStatus.state -eq 'running' -and $taskOwner.ExecutablePath -eq $taskNode -and $taskOwner.CommandLine -like ('*'+$taskScript+'*') -and @($taskStatus.diagnostics|Where-Object {$_.installed}).Count -gt 0)
+        $taskHealthy=@($taskStatus.diagnostics|Where-Object {
+            if($_.modules){
+                ($_.modules.nesting.enabled -and $_.modules.nesting.state -eq 'ready') -or
+                ($_.modules.archive.enabled -and $_.modules.archive.state -in @('ready','preview_only')) -or
+                (-not $_.modules.nesting.enabled -and -not $_.modules.archive.enabled)
+            }else{$_.installed -and @($_.errors).Count -eq 0}
+        })
+        $taskReady=($taskStatus.state -eq 'running' -and $taskOwner.ExecutablePath -eq $taskNode -and $taskOwner.CommandLine -like ('*'+$taskScript+'*') -and $taskHealthy.Count -gt 0)
     }catch{$taskReady=$false}
 }while(-not $taskReady -and (Get-Date) -lt $taskStatusDeadline)
-if(-not $taskReady){throw '原 Codex 保持运行，嵌套列表尚未确认加载，请查看运行记录。'}
-'原 Codex 已加载嵌套列表。'
+if(-not $taskReady){throw '原 Codex 保持运行，界面增强尚未加载；独立归档面板不依赖这个连接。请查看运行记录。'}
+if($taskStatus.diagnostics.modules){'原 Codex 界面增强已连接，各模块状态可在对话管理面板中查看。'}else{'原 Codex 已加载嵌套列表。'}
 } catch {
     $taskFailure=$_.Exception.Message
     if($CheckOnly){throw}

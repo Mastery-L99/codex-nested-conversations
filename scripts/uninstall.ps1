@@ -1,4 +1,4 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
+﻿[CmdletBinding(SupportsShouldProcess = $true)]
 param([string]$InstallDir)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
@@ -6,6 +6,14 @@ if (-not $InstallDir) { $InstallDir = Get-CnccDefaultInstallDir }
 $taskRoot = Assert-CnccSafePath $InstallDir
 $taskInstall = Read-CnccInstall $taskRoot
 $taskData = Assert-CnccSafePath $taskInstall.dataDir
+$taskAutoloadFile = Join-Path $taskData 'autoload-config.json'
+if (Test-Path -LiteralPath $taskAutoloadFile -PathType Leaf) {
+    $taskAutoload = Get-Content -LiteralPath $taskAutoloadFile -Raw | ConvertFrom-Json
+    $taskRegistrationState = if ($taskAutoload.PSObject.Properties['registrationState']) { $taskAutoload.registrationState } else { '' }
+    if ($taskAutoload.enabled -eq $true -or $taskRegistrationState -in @('pending', 'failed')) {
+        throw 'Disable this installation auto-loading with scripts/disable-autoload.ps1 before uninstalling. No files were removed.'
+    }
+}
 if ((Test-CnccInside $taskRoot $taskData) -or (Test-CnccInside $taskData $taskRoot)) { throw 'Installation data overlaps the application directory. Stopped.' }
 $taskCompanion = Get-CnccFullPath (Join-Path (Join-Path $taskRoot 'app') $taskInstall.runtime.companionScript)
 if (-not (Test-CnccInside $taskCompanion (Join-Path $taskRoot 'app'))) { throw 'Invalid companion path.' }

@@ -1,6 +1,7 @@
 (() => {
   'use strict';
-  // Cascades are submitted only through the original, identity-bound native menu.
+  // Single-chat menu actions use the native menu. The toolbar uses the same
+  // archive service as the plugin so it can operate on rows outside the sidebar.
   // No database, application internals, conversation text, or credentials are read.
   window.__codexNestedCascade?.dispose();
   const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -11,6 +12,7 @@
   const MAX_CHATS = 256;
   const timeout = 4000;
   let disposed = false, busy = false, modal = null, controller = null;
+  let enabled = true;
   let state = { installed: true, state: 'ready', submitted: [], verified: [], error: null };
   const owned = new Set();
   let shortcutPending = false;
@@ -24,22 +26,28 @@
       (chat.hostId ?? 'local') === 'local' && typeof chat.title === 'string';
   }
   function id(chat) { return chat.id.toLowerCase(); }
-  function graph() {
+  function graph(manifest = window.__codexNestedRelations) {
     const byId = new Map(), children = new Map();
-    for (const group of window.__codexNestedRelations?.groups ?? []) {
+    const hasCatalog = Array.isArray(manifest?.catalog);
+    for (const chat of manifest?.catalog ?? []) {
+      if (valid(chat)) byId.set(id(chat), { ...chat, id: id(chat) });
+    }
+    for (const group of manifest?.groups ?? []) {
       if (!valid(group?.parent)) continue;
-      byId.set(id(group.parent), { ...group.parent, id: id(group.parent) });
+      if (hasCatalog && !byId.has(id(group.parent))) continue;
+      if (!hasCatalog) byId.set(id(group.parent), { ...group.parent, id: id(group.parent) });
       if (!children.has(id(group.parent))) children.set(id(group.parent), new Set());
       for (const child of group.children ?? []) if (valid(child) && id(child) !== id(group.parent)) {
-        byId.set(id(child), { ...child, id: id(child) });
+        if (hasCatalog && !byId.has(id(child))) continue;
+        if (!hasCatalog) byId.set(id(child), { ...child, id: id(child) });
         children.get(id(group.parent)).add(id(child));
       }
     }
     return { byId, children };
   }
-  function plan(chat, operation = 'archive', includeDescendants = true) {
+  function plan(chat, operation = 'archive', includeDescendants = true, manifest) {
     if (!valid(chat) || !['archive', 'delete'].includes(operation)) throw new Error('Unsupported chat or operation');
-    const { byId, children } = graph();
+    const { byId, children } = graph(manifest);
     if (!byId.has(id(chat))) throw new Error('Chat is outside verified relations');
     const ordered = [], seen = new Set(), visiting = new Set();
     function visit(key, depth) {
@@ -53,7 +61,40 @@
     }
     visit(id(chat), 0);
     return { operation, includeDescendants, parent: byId.get(id(chat)), items: ordered,
-      signature: ordered.map(item => item.id).join('|') };
+      signature: JSON.stringify(ordered.map(item => [item.id, item.title])) };
+  }
+  function planMany(chats, operation = 'archive', includeDescendants = true, manifest) {
+    if (!Array.isArray(chats) || !chats.length || chats.length > MAX_CHATS ||
+        operation !== 'archive' || chats.some(chat => !valid(chat))) throw new Error('Unsupported batch scope');
+    const { byId, children } = graph(manifest);
+    const roots = [...new Set(chats.map(id))];
+    if (roots.some(key => !byId.has(key))) throw new Error('Chat is outside the verified local catalog');
+    const ordered = [], seen = new Set(), visiting = new Set();
+    const rootSet = new Set(roots);
+    function selectedSuccessors(key) {
+      const found = new Set(), walked = new Set();
+      function walk(parent) {
+        if (walked.has(parent)) return;
+        if (walked.size >= 16384) throw new Error('Relationship graph is too large to order safely');
+        walked.add(parent);
+        for (const child of children.get(parent) ?? []) {
+          if (rootSet.has(child)) found.add(child); else walk(child);
+        }
+      }
+      walk(key); return found;
+    }
+    function visit(key, depth) {
+      if (visiting.has(key)) throw new Error('Relationship cycle detected; no operation was submitted');
+      if (seen.has(key)) return;
+      if (!byId.has(key) || seen.size + visiting.size >= MAX_CHATS) throw new Error('Batch scope is unavailable or too large');
+      visiting.add(key);
+      for (const child of (includeDescendants ? children.get(key) ?? [] : selectedSuccessors(key))) visit(child, depth + 1);
+      visiting.delete(key); seen.add(key); ordered.push({ ...byId.get(key), depth });
+    }
+    for (const key of roots) visit(key, 0);
+    const parents = roots.map(key => byId.get(key));
+    return { operation, includeDescendants, parents, parent: parents[0], items: ordered,
+      signature: JSON.stringify({roots, includeDescendants, items: ordered.map(chat => [chat.id, chat.title])}) };
   }
   function visible(element) {
     return !!element?.isConnected && element.checkVisibility({ checkVisibilityCSS: true, checkOpacity: true });
@@ -136,6 +177,8 @@
     if (busy || shortcutPending || modal?.isConnected) {
       consumeShortcut(event); shortcut.duplicates++; return true;
     }
+    if (!enabled) return false;
+    if (window.__codexNestedCascadeOptions?.enableShortcutInterception === false) return false;
     const active = document.activeElement;
     // The native chat composer auto-receives focus when a chat opens. Its
     // current identity must come from public response annotations, never from
@@ -212,6 +255,97 @@
     return result;
   }
   function own(element) { element.setAttribute(OWN, ''); owned.add(element); return element; }
+  function appendScopeList(box, selected) {
+    const counts = new Map();
+    for (const chat of selected.items) counts.set(chat.title, (counts.get(chat.title) ?? 0) + 1);
+    const list = element('ul', 'cnc-scope');
+    const ordered=[...selected.items].reverse(),depths=new Map();
+    if(selected.review)for(const chat of ordered)depths.set(chat.id,depths.has(chat.parentId)?depths.get(chat.parentId)+1:0);
+    for (const chat of ordered) {
+      const label=chat.title===chat.id?'未命名聊天 · '+chat.id.slice(-8):chat.title;
+      const item = element('li', '', label);
+      item.style.paddingInlineStart = `${Math.min(depths.get(chat.id)??chat.depth??0, 8) * 14}px`;
+      if (counts.get(chat.title) > 1) {
+        const created = Number.isFinite(chat.createdAtMs) && chat.createdAtMs > 0
+          ? new Date(chat.createdAtMs).toLocaleString('zh-CN', {hour12:false}) + ' · ' : '';
+        const hint = element('small', 'cnc-chat-hint', created + chat.id.slice(-8));
+        hint.title = chat.id; item.append(hint);
+      }
+      list.append(item);
+    }
+    box.append(list);
+  }
+  function checkedReview(review) {
+    const incomplete = () => { throw new Error('归档范围信息不完整，请返回重新核对。未提交任何归档。'); };
+    if (!review || typeof review.planToken !== 'string' || !review.planToken || !Array.isArray(review.items) ||
+        !review.items.length || review.items.length > MAX_CHATS || review.totalCount !== review.items.length) incomplete();
+    const ordinary = new Map();
+    for (const chat of review.items) {
+      if (!UUID.test(chat?.id ?? '') || typeof chat.title !== 'string' || !chat.title.trim() || ordinary.has(chat.id.toLowerCase())) incomplete();
+      ordinary.set(chat.id.toLowerCase(), chat);
+    }
+    const entries = review.implicitItems ?? [], count = review.implicitCount ?? 0;
+    if (!Array.isArray(entries) || !Number.isSafeInteger(count) || count < 0 || count > 10000 || entries.length !== count) incomplete();
+    if (count > 0 && !UUID.test(review.backgroundReviewToken ?? '')) incomplete();
+    const implicitIds = new Set();
+    for (const item of entries) {
+      const key = typeof item?.id === 'string' ? item.id.toLowerCase() : '';
+      const parent = typeof item?.parentId === 'string' ? item.parentId.toLowerCase() : '';
+      if (!UUID.test(key) || implicitIds.has(key) || ordinary.has(key) || !ordinary.has(parent) ||
+          typeof item.title !== 'string' || !item.title.trim() || typeof item.parentTitle !== 'string' ||
+          !item.parentTitle.trim() || item.parentTitle !== ordinary.get(parent).title) incomplete();
+      implicitIds.add(key);
+    }
+    return Object.freeze({ ...review, items: Object.freeze(review.items.map(chat => Object.freeze({ ...chat }))),
+      implicitCount: count, implicitItems: Object.freeze(entries.map(item => Object.freeze({ id: item.id.toLowerCase(), title: item.title,
+        parentId: item.parentId.toLowerCase(), parentTitle: item.parentTitle }))) });
+  }
+  function appendImplicitList(box, review) {
+    if (!review?.implicitCount) return;
+    const section = element('section', 'cnc-implicit-section'); section.setAttribute('aria-label', '同时归档的后台记录');
+    section.append(element('h3', 'cnc-scope-heading', `后台记录（${review.implicitCount} 条）`));
+    section.append(element('p', 'cnc-note', '以下后台记录会随所属聊天一起归档，请连同聊天清单核对后再确认。'));
+    const list = element('ul', 'cnc-scope cnc-implicit-scope'), counts = new Map();
+    for (const item of review.implicitItems) counts.set(item.title, (counts.get(item.title) ?? 0) + 1);
+    for (const item of review.implicitItems) {
+      const label = item.title.toLowerCase() === item.id ? '未命名后台记录 · ' + item.id.slice(-8) : item.title;
+      const row = element('li'); row.append(element('span', 'cnc-implicit-title', label)); row.setAttribute('data-codex-cascade-implicit-id', item.id);
+      const parentLabel = item.parentTitle.toLowerCase() === item.parentId ? '未命名聊天 · ' + item.parentId.slice(-8) : item.parentTitle;
+      const owner = element('small', 'cnc-chat-hint', `所属聊天：${parentLabel}`); owner.title = item.parentId; row.append(owner);
+      if ((counts.get(item.title) ?? 0) > 1) row.append(element('small', 'cnc-chat-hint', `记录标识：…${item.id.slice(-8)}`));
+      row.title = item.id; list.append(row);
+    }
+    section.append(list); box.append(section);
+  }
+  function readImplicitProgress(selected, job) {
+    const total = selected.review?.implicitCount ?? 0, allowed = new Set((selected.review?.implicitItems ?? []).map(item => item.id));
+    const invalid = () => { throw new Error('后台记录的归档进度与确认范围不一致，请先检查本次结果。'); };
+    if (total === 0 && job.implicitTotal == null && job.verifiedImplicit == null && job.pendingImplicit == null) {
+      return { total: 0, verified: 0, pending: 0, verifiedValue: [], pendingValue: [] };
+    }
+    if (!Number.isSafeInteger(job.implicitTotal) || job.implicitTotal !== total) invalid();
+    function count(value) {
+      if (Array.isArray(value)) {
+        const seen = new Set();
+        for (const item of value) {
+          const ident = typeof item === 'string' ? item.toLowerCase() : '';
+          if (!allowed.has(ident) || seen.has(ident)) invalid(); seen.add(ident);
+        }
+        return value.length;
+      }
+      if (!Number.isSafeInteger(value) || value < 0 || value > total) invalid();
+      return value;
+    }
+    const verified = count(job.verifiedImplicit), pending = count(job.pendingImplicit);
+    if (verified + pending !== total) invalid();
+    if (Array.isArray(job.verifiedImplicit) && Array.isArray(job.pendingImplicit)) {
+      const done = new Set(job.verifiedImplicit.map(value => value.toLowerCase()));
+      if (job.pendingImplicit.some(value => done.has(value.toLowerCase()))) invalid();
+    }
+    return { total, verified, pending,
+      verifiedValue: Array.isArray(job.verifiedImplicit) ? [...job.verifiedImplicit] : verified,
+      pendingValue: Array.isArray(job.pendingImplicit) ? [...job.pendingImplicit] : pending };
+  }
   function closeModal() {
     modal?.remove(); if (modal) owned.delete(modal); modal = null;
     if (!busy && state.state === 'scope_preview') state = { ...state, state: 'cancelled' };
@@ -258,24 +392,50 @@
     modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', '归档子树进度');
     const box = element('div', 'cnc-box');
-    box.append(element('h2', '', '正在归档对话'));
+    const heading = element('h2', '', '正在归档对话'); box.append(heading);
     const progress = element('p', 'cnc-progress', `已归档 0 / ${selected.items.length} 个对话`);
     progress.setAttribute('role', 'status'); box.append(progress);
+    let implicit = null;
+    if (selected.review?.implicitCount) {
+      implicit = element('p', 'cnc-implicit-progress', `后台记录：已确认 0 / ${selected.review.implicitCount} 条 · 待确认 ${selected.review.implicitCount} 条`);
+      implicit.setAttribute('role', 'status'); box.append(implicit);
+    }
     const detail = element('p', 'cnc-detail', ''); box.append(detail);
+    const current = element('p', 'cnc-current', ''); box.append(current);
     const stop = element('button', 'cnc-button', '停止后续操作');
     stop.type = 'button'; stop.addEventListener('click', () => controller?.abort()); box.append(stop);
     modal.append(box); document.body.append(modal);
-    return { progress, detail, stop };
+    return { heading, progress, implicit, detail, current, stop };
+  }
+  function archiveReady() {
+    return enabled && window.__codexNestedCascadeOptions?.enableArchiveExecution === true &&
+      typeof window.__codexNestedArchiveStatus === 'function' &&
+      (!window.__codexNestedCascadeOptions?.requireFreshValidation || typeof window.__codexNestedValidateArchive === 'function') &&
+      (!window.__codexNestedCascadeOptions?.requireNativeMenuBridge || typeof window.__codexNestedRuntime?.openNativeMenu === 'function');
+  }
+  function invalidatePreview() {
+    state = { ...state, state: 'plan_changed', error: 'The selected scope changed; review it again' };
+    if (modal?.isConnected) {
+      for (const button of modal.querySelectorAll('button')) if (button.textContent !== '取消') button.disabled = true;
+      let note = modal.querySelector('[data-codex-cascade-error]');
+      if (!note) { note = element('p', 'cnc-note'); note.setAttribute('data-codex-cascade-error', ''); note.setAttribute('role', 'alert'); modal.querySelector('.cnc-box')?.append(note); }
+      note.textContent = '聊天列表或下级关系有变化，请取消后重新选择归档范围。';
+    }
+    document.dispatchEvent(new CustomEvent('codex-nested:state-changed'));
   }
   async function execute(selected) {
     if (busy || disposed) return;
-    if (selected.operation !== 'archive' || !window.__codexNestedCascadeOptions?.enableArchiveExecution || typeof window.__codexNestedArchiveStatus !== 'function') {
+    if (selected.operation !== 'archive' || !archiveReady()) {
       state = { ...state, state: 'execution_not_enabled', error: 'Archive execution or status check is not enabled' }; return;
     }
-    const fresh = plan(selected.parent, selected.operation, selected.includeDescendants);
+    let fresh;
+    try { fresh = selected.parents ? planMany(selected.parents, selected.operation, selected.includeDescendants)
+      : plan(selected.parent, selected.operation, selected.includeDescendants); }
+    catch {
+      invalidatePreview(); return;
+    }
     if (fresh.signature !== selected.signature) {
-      state = { ...state, state: 'plan_changed', error: 'Relationships changed; review the scope again' };
-      closeModal(); return;
+      invalidatePreview(); return;
     }
     const runtime = window.__codexNestedRuntime;
     if (typeof runtime?.openNativeMenu !== 'function' || typeof runtime?.getMenuContext !== 'function') {
@@ -287,10 +447,30 @@
     const ui = progressDialog(selected);
     try {
       await window.__codexNestedBeginArchive?.({parentId:selected.parent.id,ids:selected.items.map(row=>row.id),includeDescendants:selected.includeDescendants});
+      // The UI index pauses while a confirmation is open. Read a fresh snapshot
+      // before the first mutation so a new child from another window cannot be
+      // omitted merely because the displayed tree was intentionally frozen.
+      if (typeof window.__codexNestedValidateArchive === 'function') {
+        let validationTimer;
+        let snapshot;
+        try {
+          snapshot = await Promise.race([
+            Promise.resolve().then(() => window.__codexNestedValidateArchive()),
+            new Promise((_, reject) => { validationTimer = setTimeout(() => reject(new Error('Fresh archive scope check timed out')), 17000); })
+          ]);
+        } finally { clearTimeout(validationTimer); }
+        if (!snapshot || snapshot.schemaVersion !== 1 || !Array.isArray(snapshot.groups)) throw new Error('Archive scope could not be checked');
+        const checked = selected.parents ? planMany(selected.parents, selected.operation, selected.includeDescendants, snapshot)
+          : plan(selected.parent, selected.operation, selected.includeDescendants, snapshot);
+        if (checked.signature !== selected.signature) {
+          const changed = new Error('Archive scope changed; close this dialog and review it again'); changed.name = 'ScopeChangedError'; throw changed;
+        }
+      }
       for (const chat of selected.items) {
         if (controller.signal.aborted || disposed) throw new Error('Stopped; remaining chats were preserved');
         if (nativeConfirmationVisible()) throw new Error('Complete the original application confirmation before continuing');
-        ui.detail.textContent = chat.title;
+        ui.current.textContent = `当前对话：${chat.title}`;
+        state.lastAttemptedId = chat.id;
         const opened = await runtime.openNativeMenu(chat, ui.detail);
         if (disposed || controller?.signal.aborted) {
           await runtime.closeNativeMenu?.();
@@ -321,11 +501,16 @@
         await new Promise(resolve => window.setTimeout(resolve, 120));
       }
       state.state = 'completed'; ui.detail.textContent = `已归档全部 ${state.verified.length} 个对话。`;
+      ui.current.textContent = '';
     } catch (error) {
       state.state = controller.signal.aborted ? 'stopped' : 'stopped_after_error';
       state.error = String(error?.message ?? error).slice(0, 240);
-      ui.detail.textContent = controller.signal.aborted ? '已停止。尚未处理的对话保持原样。' : '已停止后续操作，请核对原应用提示。';
+      ui.detail.textContent = controller.signal.aborted ? '已停止。尚未处理的对话保持原样。' :
+        error?.name === 'ScopeChangedError' ? '归档范围有变化，请关闭窗口后重新核对。尚未归档任何对话。' : '已停止后续操作，请核对原应用提示。';
+      const unconfirmed = state.submitted.length - state.verified.length;
+      if (unconfirmed > 0) ui.detail.textContent += ` 有 ${unconfirmed} 个操作的结果尚未确认，请先检查当前对话。`;
     } finally {
+      ui.heading.textContent = state.state === 'completed' ? '归档完成' : '归档已停止';
       busy = false; controller = null;
       await window.__codexNestedEndArchive?.().catch(()=>{});
       ui.stop.textContent = '关闭'; ui.stop.replaceWith(ui.stop.cloneNode(true));
@@ -334,7 +519,7 @@
     }
   }
   async function preview(chat, operation = 'archive', anchor) {
-    if (busy || disposed) return null;
+    if (busy || disposed || !enabled) return null;
     const selected = plan(chat, operation, true);
     if (selected.items.length < 2) return null;
     await window.__codexNestedRuntime?.closeNativeMenu?.();
@@ -346,13 +531,8 @@
     const box = element('div', 'cnc-box');
     box.append(element('h2', '', operation === 'archive' ? '归档主对话和下级对话' : '删除对话范围'));
     box.append(element('p', '', `“${selected.parent.title}”及其 ${selected.items.length - 1} 个下级对话，共 ${selected.items.length} 个。`));
-    const list = element('ul', 'cnc-scope');
-    // Show the root first for readability; execution remains descendants first.
-    for (const chat of [...selected.items].reverse()) {
-      const item = element('li', '', chat.title); item.style.paddingInlineStart = `${Math.min(chat.depth, 8) * 14}px`; list.append(item);
-    }
-    box.append(list);
-    const archiveEnabled = operation === 'archive' && window.__codexNestedCascadeOptions?.enableArchiveExecution === true && typeof window.__codexNestedArchiveStatus === 'function';
+    appendScopeList(box, selected);
+    const archiveEnabled = operation === 'archive' && archiveReady();
     if (operation === 'delete') box.append(element('p', 'cnc-note', '删除需逐个使用原应用的删除和确认入口。本版本不自动批量删除。'));
     else if (!archiveEnabled) box.append(element('p', 'cnc-note', '当前为范围预览，批量归档和结果检查尚未就绪。'));
     const controls = element('div', 'cnc-controls');
@@ -372,8 +552,106 @@
     document.dispatchEvent(new CustomEvent('codex-nested:state-changed'));
     return { parentId: selected.parent.id, count: selected.items.length, operation };
   }
+  async function previewMany(chats, options = {}, anchor) {
+    if (busy || disposed || shortcutPending || !enabled) return null;
+    const useService=window.__codexNestedCascadeOptions?.requireBatchService===true || typeof window.__codexNestedBatchArchive==='function';
+    let selected;
+    if(useService){
+      const raw=await callBatch('plan',{chatIds:chats.map(id),includeDescendants:options.includeDescendants!==false});
+      let review;
+      try { review=checkedReview(raw); }
+      catch (error) { if (typeof raw?.planToken === 'string') void callBatch('discard',{planToken:raw.planToken}).catch(()=>{}); throw error; }
+      selected={parents:chats,parent:chats[0],items:review.items,includeDescendants:review.includeDescendants,review};
+    }else {
+      selected=planMany(chats,'archive',options.includeDescendants!==false);
+      await window.__codexNestedRuntime?.closeNativeMenu?.();
+    }
+    if (busy || disposed || !enabled) return null;
+    closeModal();
+    modal = own(element('div', 'cnc-overlay'));
+    modal.setAttribute('data-codex-cascade-dialog', 'scope');
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', '批量归档范围');
+    const box = element('div', 'cnc-box');
+    box.append(element('h2', '', '确认批量归档'));
+    box.append(element('p', '', `选中 ${selected.parents.length} 个对话${selected.includeDescendants ? '，包含它们的全部下级' : ''}，去重后共 ${selected.items.length} 个${selected.review?.implicitCount ? `聊天，另含 ${selected.review.implicitCount} 条后台记录` : ''}。`));
+    if (selected.review?.implicitCount) box.append(element('h3', 'cnc-scope-heading', `聊天（${selected.items.length} 个）`));
+    appendScopeList(box, selected);
+    appendImplicitList(box, selected.review);
+    for(const warning of selected.review?.warnings??[])box.append(element('p','cnc-note',warning));
+    const controls = element('div', 'cnc-controls');
+    const submit = element('button', 'cnc-button cnc-primary', selected.review?.implicitCount
+      ? `按此范围归档 ${selected.items.length} 个聊天和 ${selected.review.implicitCount} 条后台记录` : `归档全部 ${selected.items.length} 个`);
+    submit.type = 'button';
+    submit.disabled = selected.review ? !enabled || window.__codexNestedCascadeOptions?.enableArchiveExecution!==true : !archiveReady();
+    submit.addEventListener('click', () => selected.review?executeBatch(selected):execute(selected));
+    const cancel = element('button', 'cnc-button', '取消'); cancel.type = 'button';
+    cancel.addEventListener('click', () => {
+      if(selected.review)void callBatch('discard',{planToken:selected.review.planToken}).catch(()=>{});
+      closeModal();anchor?.focus?.();
+    });
+    controls.append(submit, cancel); box.append(controls); modal.append(box); document.body.append(modal);
+    modal.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); cancel.click(); } });
+    cancel.focus();
+    state = { installed: true, state: 'scope_preview', operation: 'archive', parentId: selected.parent.id,
+      rootIds: selected.parents.map(chat => chat.id), planned: selected.items.map(chat => chat.id),
+      implicitTotal: selected.review?.implicitCount ?? 0, plannedImplicit: (selected.review?.implicitItems ?? []).map(item => item.id),
+      submitted: [], verified: [], error: null };
+    document.dispatchEvent(new CustomEvent('codex-nested:state-changed'));
+    return { rootCount: selected.parents.length, count: selected.items.length,
+      ...(selected.review?.implicitCount ? {implicitCount:selected.review.implicitCount} : {}), operation: 'archive' };
+  }
+  async function callBatch(action,input){
+    if(typeof window.__codexNestedBatchArchive!=='function')throw Error('归档服务尚未连接，请重新打开对话管理。');
+    const result=await window.__codexNestedBatchArchive(action,input);
+    if(!result?.ok)throw Error(result?.message||'归档服务连接中断，请先检查本次结果。');
+    return result.value;
+  }
+  async function executeBatch(selected){
+    if(busy||disposed||!enabled)return;
+    busy=true;controller=new AbortController();
+    const signal=controller.signal, ui=progressDialog(selected);
+    state={installed:true,state:'running',operation:'archive',planned:selected.items.map(row=>row.id),submitted:[],verified:[],
+      implicitTotal:selected.review.implicitCount,verifiedImplicit:[],pendingImplicit:selected.review.implicitItems.map(item=>item.id),error:null};
+    let job,requestedStop=false;
+    try{
+      job=await callBatch('confirm',{planToken:selected.review.planToken,
+        ...(selected.review.implicitCount ? {backgroundReviewToken:selected.review.backgroundReviewToken} : {})});
+      while(true){
+        if(job.total!==selected.items.length)throw Error('聊天数量与已确认范围不一致，请先检查本次结果。');
+        state.jobId=job.jobId;state.submitted=job.submitted||[];state.verified=job.verified||[];
+        const implicit=readImplicitProgress(selected,job);
+        state.implicitTotal=implicit.total;state.verifiedImplicit=implicit.verifiedValue;state.pendingImplicit=implicit.pendingValue;
+        ui.progress.textContent=`已归档 ${state.verified.length} / ${job.total} 个对话`;
+        if(ui.implicit)ui.implicit.textContent=`后台记录：已确认 ${implicit.verified} / ${implicit.total} 条 · 待确认 ${implicit.pending} 条`;
+        ui.current.textContent=job.currentTitle?`当前对话：${job.currentTitle}`:'';
+        if(!['queued','running','stopping'].includes(job.status))break;
+        if(signal.aborted&&!requestedStop){requestedStop=true;job=await callBatch('stop',{jobId:job.jobId});continue;}
+        await new Promise(resolve=>setTimeout(resolve,350));
+        job=await callBatch('status',{jobId:job.jobId});
+      }
+      state.state=job.status;
+      if(job.status==='completed'){
+        const implicit=readImplicitProgress(selected,job);
+        if(implicit.verified!==implicit.total||implicit.pending!==0)throw Error('后台记录尚未全部确认归档，请先检查本次结果。');
+        ui.detail.textContent=`已归档全部 ${state.verified.length} 个对话${implicit.total?`，并确认 ${implicit.verified} 条后台记录归档`:''}。`;
+      }
+      else {
+        state.error=job.error?.message||'后续归档已停止。';
+        ui.detail.textContent=state.error+` 还有 ${job.pending?.length??0} 个对话未确认归档。`;
+      }
+    }catch(error){
+      state.state='result_unavailable';state.error=String(error.message||error);
+      ui.detail.textContent=state.error+' 请先检查当前归档结果，再决定是否重新提交。';
+    }finally{
+      ui.heading.textContent = state.state === 'completed' ? '归档完成' : '归档已停止';
+      busy=false;controller=null;
+      ui.stop.textContent='关闭';const close=ui.stop.cloneNode(true);ui.stop.replaceWith(close);close.addEventListener('click',closeModal);
+      document.dispatchEvent(new CustomEvent('codex-nested:state-changed'));
+    }
+  }
   function intercept(event) {
-    if (busy || disposed || event.defaultPrevented) return;
+    if (busy || disposed || !enabled || event.defaultPrevented) return;
     if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
     const item = event.target?.closest?.('[role="menuitem"]');
     const operation = actionOf(item);
@@ -393,9 +671,10 @@
   }
   const style = own(element('style'));
   style.textContent = `.cnc-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);font:14px system-ui;color:var(--color-text,#eee)}
-    .cnc-box{width:min(530px,calc(100vw - 48px));padding:22px;border:1px solid rgba(127,127,127,.35);border-radius:16px;background:var(--color-background-primary,#30302e);box-shadow:0 16px 70px rgba(0,0,0,.4)}
+    .cnc-box{box-sizing:border-box;width:min(570px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid rgba(127,127,127,.35);border-radius:16px;background:var(--color-background-primary,#30302e);box-shadow:0 16px 70px rgba(0,0,0,.4)}
     .cnc-box h2{font-size:17px;margin:0 0 12px;font-weight:600}.cnc-box p{line-height:1.6;margin:8px 0}.cnc-scope{list-style:none;max-height:250px;overflow:auto;padding:10px 0;margin:12px 0;border-block:1px solid rgba(127,127,127,.2)}
-    .cnc-scope li{padding-block:5px;overflow-wrap:anywhere}.cnc-note{opacity:.7;font-size:12px}.cnc-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:18px}
+    .cnc-scope li{padding-block:5px;overflow-wrap:anywhere}.cnc-chat-hint{display:block;opacity:.65;font-size:11px;margin-top:2px}.cnc-current{opacity:.8;overflow-wrap:anywhere}.cnc-note{opacity:.7;font-size:12px}.cnc-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:18px}
+    .cnc-scope-heading{font-size:14px;line-height:1.5;margin:14px 0 5px;font-weight:600}.cnc-implicit-section{border-top:1px solid rgba(127,127,127,.25)}.cnc-implicit-scope{max-height:190px;margin-top:6px}.cnc-implicit-progress{font-size:13px;line-height:1.6}
     .cnc-button{border:1px solid rgba(127,127,127,.35);border-radius:8px;padding:7px 12px;color:inherit;background:transparent;font:inherit;cursor:pointer}.cnc-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}.cnc-button:disabled{opacity:.4;cursor:default}.cnc-primary{background:rgba(127,127,127,.2)}`;
   document.head.append(style);
   document.addEventListener('click', intercept, true);
@@ -405,8 +684,10 @@
   Object.defineProperty(window, 'dispatchEvent', { configurable:true, writable:true,
     enumerable:dispatchDescriptor?.enumerable ?? false, value:dispatchEventWithArchiveShortcut });
   const api = {
-    plan, preview,
-    inspect() { return { ...state, submitted: [...state.submitted], verified: [...(state.verified ?? [])], busy,
+    plan, preview, planMany, previewMany,
+    setEnabled(value) { enabled=value===true; if(!enabled){controller?.abort();if(!busy)closeModal();}return api.inspect(); },
+    listChats() { return [...graph().byId.values()].map(chat => ({ ...chat })); },
+    inspect() { return { ...state, enabled, submitted: [...state.submitted], verified: [...(state.verified ?? [])], busy,
       dialogOpen: !!modal?.isConnected,
       shortcut: { ...shortcut, pending: shortcutPending },
       previewOpen: !!modal?.isConnected && modal.getAttribute('data-codex-cascade-dialog') === 'scope' }; },

@@ -1,6 +1,6 @@
 # Windows quick start
 
-This guide covers `0.2.0-preview.1`, an independent open-source enhancement that displays nested conversations in the same official Codex desktop window. It does not install a second Codex client. The tested official app package is `26.1023.6621.0`; other versions may need adaptation.
+This guide covers `0.3.0-preview.6`, an independent open-source enhancement that displays nested conversations in the same official Codex desktop window. It does not install a second Codex client. The tested official app package is `26.1027.3384.0`; other versions may need adaptation.
 
 ## 1. Prerequisites
 
@@ -8,12 +8,12 @@ Use Windows 10/11 with the official Codex desktop app installed, Node.js 22 or l
 
 ## 2. Download and extract
 
-Download the [0.2.0-preview.1 source ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.2.0-preview.1/codex-nested-conversations-0.2.0-preview.1-source.zip) from the [release page](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.2.0-preview.1). You can also choose **Code → Download ZIP** on the repository; that contains the current source and may be newer. Extract the entire archive and open its project directory, containing `package.json`, `scripts`, and `src`.
+For the official plugin panel from the original icon, use the [one-instruction installation guide](install-agent.md). For the tree directly inside the native lists, download the [full source ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.6/codex-nested-conversations-0.3.0-preview.6-source.zip), extract it, and open the directory containing `package.json`, `scripts`, and `src`. For bulk archive alone, use the [archive plugin package and two-step installation](independent-modules.md).
 
 Type `powershell` in that folder's address bar and press Enter. Run these commands in order:
 
 ```powershell
-npm ci --ignore-scripts
+npm.cmd ci --omit=dev --ignore-scripts
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
 ```
 

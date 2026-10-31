@@ -4,10 +4,10 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const skip = new Set(['.git', 'node_modules', '.local-test', 'dist']);
 const blockedDirs = new Set(['data', 'runtime', 'logs', 'backups', 'profile', 'profiles', '.codex', 'sessions', 'archived_sessions']);
-const blockedNames = /^(?:auth(?:\..*)?\.json|credentials.*|tokens.*|relations\.json|runtime-status\.json|start-status\.json|ui-preferences\.json|runtime-options\.json|stop-request.*\.json|deployment\.json|release\.json|disabled\.json|codex\.ico|\.cncc-(?:install|data)\.json)$/i;
+const blockedNames = /^(?:auth(?:\..*)?\.json|credentials.*|tokens.*|relations\.json|(?:native-)?runtime-status\.json|module-state\.json|start-status\.json|ui-preferences\.json|runtime-options\.json|stop-request.*\.json|deployment\.json|release\.json|disabled\.json|codex\.ico|\.cncc-(?:install|data)\.json)$/i;
 const blockedExt = /\.(?:db(?:-.*)?|sqlite(?:3)?(?:-.*)?|lnk|log)$/i;
-const allowedRoots = new Set(['src', 'scripts', 'tests', 'docs', '.github']);
-const allowedFiles = new Set(['.gitignore', 'package.json', 'package-lock.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE', 'LICENSE.md', 'runtime-manifest.json', 'CONTRIBUTING.md']);
+const allowedRoots = new Set(['src', 'scripts', 'tests', 'docs', '.github', '.agents']);
+const allowedFiles = new Set(['.gitignore', 'package.json', 'package-lock.json', 'plugin.json', 'mcp.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE', 'LICENSE.md', 'runtime-manifest.json', 'CONTRIBUTING.md']);
 const findings = [];
 let checked = 0;
 function walk(dir) {
@@ -15,6 +15,7 @@ function walk(dir) {
     if (skip.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     const rel = path.relative(root, full).replaceAll(path.sep, '/');
+    if(rel.startsWith('.agents/')&&!['.agents/plugins','.agents/plugins/marketplace.json'].includes(rel)){findings.push(`${rel}: unreviewed agent metadata`);continue;}
     if (entry.isSymbolicLink()) { findings.push(`${rel}: symbolic links are excluded`); continue; }
     if (entry.isDirectory()) {
       if (blockedDirs.has(entry.name.toLowerCase())) { findings.push(`${rel}: local/private directory`); continue; }

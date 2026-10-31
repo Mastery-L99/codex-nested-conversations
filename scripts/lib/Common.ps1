@@ -1,4 +1,4 @@
-Set-StrictMode -Version 2.0
+﻿Set-StrictMode -Version 2.0
 $script:CnccId = 'codex-nested-conversations'
 $script:CnccShortcutName = 'Codex Nested Conversations.lnk'
 
@@ -22,6 +22,24 @@ function Test-CnccInside([string]$Path, [string]$Parent) {
     $taskParent = Get-CnccFullPath $Parent
     $taskPath.Equals($taskParent, [StringComparison]::OrdinalIgnoreCase) -or
         $taskPath.StartsWith($taskParent + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-CnccPlainTree([string]$Path) {
+    # The PowerShell 5.1 filesystem provider can omit or reject children past MAX_PATH.
+    # Inspect each entry before descending, including hidden files and non-symbolic reparse points.
+    $absolute = Get-CnccFullPath $Path
+    if ($absolute.StartsWith('\\?\') -or $absolute.StartsWith('\\.\')) { throw 'Use a regular absolute project path.' }
+    $scanPath = if ($absolute.StartsWith('\\')) { '\\?\UNC\' + $absolute.Substring(2) } else { '\\?\' + $absolute }
+    $pendingPaths = New-Object 'System.Collections.Generic.Stack[string]'
+    $pendingPaths.Push($scanPath)
+    while ($pendingPaths.Count -gt 0) {
+        $entry = $pendingPaths.Pop()
+        $attributes = [IO.File]::GetAttributes($entry)
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'The directory contains a reparse point; operation stopped.' }
+        if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) {
+            foreach ($child in [IO.Directory]::EnumerateFileSystemEntries($entry)) { $pendingPaths.Push($child) }
+        }
+    }
 }
 
 function Assert-CnccSafePath([string]$Path) {
@@ -54,7 +72,7 @@ function Get-CnccRuntimeManifest([string]$RepoRoot) {
     if ($taskManifest.schemaVersion -ne 1 -or @($taskManifest.files).Count -eq 0) { throw 'Invalid runtime manifest.' }
     $taskSource = Get-CnccFullPath (Join-Path $RepoRoot 'src')
     foreach ($taskFile in $taskManifest.files) {
-        if ($taskFile -isnot [string] -or $taskFile -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*\.(cjs|js|py|ps1)$' -or ($taskFile -split '/') -contains '..') { throw 'The runtime manifest contains an invalid source path.' }
+        if ($taskFile -isnot [string] -or $taskFile -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*\.(cjs|js|py|ps1|html)$' -or ($taskFile -split '/') -contains '..') { throw 'The runtime manifest contains an invalid source path.' }
         $taskResolved = Get-CnccFullPath (Join-Path $taskSource $taskFile)
         if (-not (Test-CnccInside $taskResolved $taskSource)) { throw 'Runtime sources must remain inside src.' }
         $null = Assert-CnccSafePath $taskResolved
@@ -91,7 +109,7 @@ function Get-CnccDependencies([string]$RepoRoot) {
         $taskDirectory = Join-Path $RepoRoot ('node_modules\' + $taskName)
         if (-not (Test-Path -LiteralPath (Join-Path $taskDirectory 'package.json') -PathType Leaf)) { throw 'Public npm dependencies are missing. Run npm ci --ignore-scripts in the repository, then retry.' }
         $null = Assert-CnccSafePath $taskDirectory
-        if (@(Get-ChildItem -LiteralPath $taskDirectory -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) { throw 'Dependency directories must not contain reparse points.' }
+        Assert-CnccPlainTree $taskDirectory
     }
     $taskPlaywrightVersion = (& $taskNode.Source -e "const{createRequire}=require('node:module');const p=require('node:path');console.log(createRequire(p.join(process.argv[1],'package.json'))('playwright/package.json').version)" $RepoRoot).Trim()
     $taskDeclared = (Get-Content -LiteralPath (Join-Path $RepoRoot 'package.json') -Raw | ConvertFrom-Json).dependencies.playwright
@@ -115,6 +133,7 @@ function Read-CnccInstall([string]$InstallDir) {
 
 function Set-CnccEnvironment($Install) {
     $env:CNCC_DATA_DIR = Get-CnccFullPath $Install.dataDir
+    $env:CNCC_SETTINGS_DIR = if($Install.PSObject.Properties['settingsDir']){Get-CnccFullPath $Install.settingsDir}else{Get-CnccFullPath $Install.dataDir}
     $env:CNCC_NODE = $Install.node
     $env:CNCC_PYTHON = $Install.python
 }
@@ -141,7 +160,7 @@ function Test-CnccStartShortcutIdentity([string]$InstallDir, [string]$TargetPath
 function Send-CnccToRecycleBin([string]$LiteralPath) {
     $taskPath = Assert-CnccSafePath $LiteralPath
     $taskItem = Get-Item -LiteralPath $taskPath -Force
-    if ($taskItem.PSIsContainer -and @(Get-ChildItem -LiteralPath $taskPath -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) { throw 'The directory contains a reparse point; recycling stopped.' }
+    if ($taskItem.PSIsContainer) { Assert-CnccPlainTree $taskPath }
     Add-Type -AssemblyName Microsoft.VisualBasic
     if ($taskItem.PSIsContainer) {
         [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($taskPath, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin, [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException)

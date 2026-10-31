@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -64,6 +65,10 @@ def classify_thread(row):
     if row["archived"]:
         return "archived"
     raw_source = row["source"] or ""
+    # Noninteractive codex exec runs are not desktop sidebar chats. Their
+    # thread_source can still be "user", including when Desktop launched them.
+    if raw_source == "exec":
+        return "execution_record"
     if row["agent_path"] or row["thread_source"] in ("subagent", "automation"):
         return "system_or_subagent"
     try:
@@ -86,7 +91,7 @@ def candidate_roots(state):
     for row in rows:
         category = classify_thread(row)
         counts[category] = counts.get(category, 0) + 1
-        if category == "eligible":
+        if category == "eligible" and valid_uuid(row["id"]):
             roots.append(row["id"])
     return roots, counts
 
@@ -133,11 +138,11 @@ def build_manifest(history, state, roots, limit=None):
     queue = deque(roots)
     visited = set()
     groups = []
-    fork_edges = collect_fork_edges(history, state)
+    fork_edges = collect_fork_edges(history, state) if history is not None else {}
 
     def row_for(ident):
         return state.execute(
-            "SELECT id,name,archived,thread_source,source,agent_path,created_at_ms,created_at FROM threads WHERE id=?",
+            "SELECT id,name,archived,thread_source,source,agent_path,created_at_ms,created_at,updated_at_ms,attached_thread_parent_id FROM threads WHERE id=?",
             (ident,)).fetchone()
 
     def node(ident, fallback=""):
@@ -145,7 +150,11 @@ def build_manifest(history, state, roots, limit=None):
         # In this schema `name` is the desktop title; `title` can hold a raw
         # user message and must not be displayed as if it were the chat name.
         return {"id": ident, "title": (row["name"] if row else None) or fallback or ident,
-                "kind": "codex", "hostId": "local"}
+                "kind": "codex", "hostId": "local",
+                "threadSource": row["thread_source"] if row else None,
+                "eligibility": classify_thread(row),
+                "createdAtMs": (row["created_at_ms"] or row["created_at"] * 1000) if row else None,
+                "updatedAtMs": row["updated_at_ms"] if row else None}
 
     while queue:
         parent_id = queue.popleft()
@@ -164,7 +173,7 @@ def build_manifest(history, state, roots, limit=None):
             "AND item_type='mcpToolCall' "
             "AND json_extract(item_json,'$.server')='codex_app' "
             "AND json_extract(item_json,'$.tool')='create_thread' "
-            "ORDER BY rollout_ordinal", (parent_id,))
+            "ORDER BY rollout_ordinal", (parent_id,)) if history is not None else ()
         for call in calls:
             # Forks retain earlier history. A creation event predating this
             # fork's own creation belongs to its source, not to the fork.
@@ -191,12 +200,14 @@ def build_manifest(history, state, roots, limit=None):
                 host = result.get("hostId")
                 if not valid_uuid(child_id) or host != "local" or child_id == parent_id:
                     continue
-                if classify_thread(row_for(child_id)) != "eligible":
+                child_row = row_for(child_id)
+                if classify_thread(child_row) != "eligible" or child_row["attached_thread_parent_id"] not in (None, parent_id):
                     continue
                 children[child_id] = node(child_id, arguments.get("title", ""))
                 sources.append("create_thread:" + call["item_id"])
         for child_id, source in fork_edges.get(parent_id, {}).items():
-            if classify_thread(row_for(child_id)) != "eligible":
+            child_row = row_for(child_id)
+            if classify_thread(child_row) != "eligible" or child_row["attached_thread_parent_id"] not in (None, parent_id):
                 continue
             children[child_id] = node(child_id)
             sources.append(source)
@@ -215,15 +226,21 @@ def build_manifest(history, state, roots, limit=None):
             groups.append({"parent": node(parent_id), "children": list(children.values()),
                            "source": "; ".join(sources)})
             queue.extend(children)
-    return {"schemaVersion": 1, "groups": groups}
+    # A standalone chat belongs in the selection catalog, never in a fabricated
+    # relationship group. All entries passed the same read-only eligibility gate.
+    catalog_order = dict.fromkeys([*roots, *sorted(visited)])
+    return {"schemaVersion": 1, "groups": groups,
+            "catalog": [node(ident) for ident in catalog_order if ident in visited]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
+    parser.add_argument("--codex-home", type=Path, default=Path(os.environ.get("CNCC_CODEX_HOME", Path.home() / ".codex")))
     parser.add_argument("--output", type=Path, default=Path(__file__).with_name("relations.json"))
     parser.add_argument("--root", action="append", default=[])
     parser.add_argument("--check", action="store_true", help="Print counts without writing anything.")
+    parser.add_argument("--manifest-stdout", action="store_true",
+                        help="Return a fresh read-only manifest on stdout without writing a file.")
     args = parser.parse_args()
     if not all(valid_uuid(ident) for ident in args.root):
         parser.error("Each root must be a chat UUID.")
@@ -234,6 +251,9 @@ def main():
         if args.root and not set(args.root).issubset(candidates):
             parser.error("Explicit roots must be existing, unarchived user chats, excluding system/subagent/unknown sources.")
         manifest = build_manifest(history, state, roots)
+    if args.manifest_stdout:
+        print(json.dumps(manifest, ensure_ascii=False))
+        return
     changed = True
     if args.output.exists():
         with args.output.open(encoding="utf-8-sig") as source:

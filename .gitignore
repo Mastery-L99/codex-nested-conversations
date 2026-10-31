@@ -36,6 +36,9 @@ backups/
 *.log
 relations.json
 runtime-status.json
+native-runtime-status.json
+module-state.json
+archive-jobs/
 start-status.json
 ui-preferences.json
 runtime-options.json

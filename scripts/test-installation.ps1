@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
@@ -58,6 +58,11 @@ try {
     Assert-Test ($taskInstalled.state -eq 'installed') 'Installation did not complete.'
     Assert-Test (-not $taskInstalled.shortcut) 'The test installation created a shortcut.'
     Assert-Test ($taskInstalled.dataDir -eq $taskData) 'The installation used a different data directory.'
+    # Use Node to check the dependency file that exceeded the Windows PowerShell copy limit.
+    $taskReference = 'node_modules/playwright-core/lib/tools/skills/playwright-cli/references/element-attributes.md'
+    $taskInstalledBytesMatch = "const fs=require('node:fs'); process.exit(fs.readFileSync(process.argv[1]).equals(fs.readFileSync(process.argv[2])) ? 0 : 1)"
+    & $taskInstalled.node -e $taskInstalledBytesMatch (Join-Path $taskRepo $taskReference) (Join-Path $taskInstall $taskReference)
+    Assert-Test ($LASTEXITCODE -eq 0) 'The installed deep Playwright reference differs from the source.'
     Assert-Test (Test-Path -LiteralPath (Join-Path $taskInstall 'LICENSE') -PathType Leaf) 'The installed MIT license is missing.'
     Assert-Test ((Get-TestHash (Join-Path $taskRepo 'LICENSE')) -eq (Get-TestHash (Join-Path $taskInstall 'LICENSE'))) 'The installed license differs from the release.'
     Assert-Test (Test-Path -LiteralPath (Join-Path $taskInstall 'README.zh-CN.md') -PathType Leaf) 'The installed Chinese README is missing.'
@@ -67,11 +72,22 @@ try {
         $taskCopy = Get-TestHash (Join-Path (Join-Path $taskInstall 'app') $taskFile)
         Assert-Test ($taskOriginal -eq $taskCopy) ('Installed source differs: ' + $taskFile)
     }
+    $taskPluginRoot = Join-Path $taskInstall 'plugin'
+    Assert-Test (-not (Test-Path -LiteralPath (Join-Path $taskPluginRoot 'node_modules'))) 'The clean plugin contains development dependencies.'
+    Assert-Test (-not (Test-Path -LiteralPath (Join-Path $taskPluginRoot '.git'))) 'The clean plugin contains Git metadata.'
+    $taskPluginMcp = Get-Content -LiteralPath (Join-Path $taskPluginRoot 'mcp.json') -Raw | ConvertFrom-Json
+    Assert-Test ($taskPluginMcp.mcpServers.'conversation-manager'.args[0] -ceq '${PLUGIN_ROOT}/src/archive-server.cjs') 'The independent plugin points outside its clean package.'
+    Assert-Test ($taskPluginMcp.mcpServers.'conversation-manager'.command -ceq 'node') 'The official plugin parser rejects absolute executable commands.'
+    Assert-Test ($taskPluginMcp.mcpServers.'conversation-manager'.env.CNCC_SETTINGS_DIR -eq $taskData) 'Plugin and native modules do not share the configured settings directory.'
+    $taskCatalog = Get-Content -LiteralPath (Join-Path $taskInstall '.agents\plugins\marketplace.json') -Raw | ConvertFrom-Json
+    Assert-Test ($taskCatalog.plugins[0].source.path -ceq './plugin') 'The marketplace could copy the full installation instead of the clean plugin.'
+    foreach ($taskFile in $taskManifest.archiveFiles) {Assert-Test ((Get-TestHash (Join-Path $taskPluginRoot ('src\'+$taskFile))) -eq (Get-TestHash (Join-Path $taskRepo ('src\'+$taskFile)))) 'The independent plugin source differs from the release.'}
     $taskSavedEnvironment = @{}
-    foreach ($taskKey in @('CNCC_DATA_DIR', 'CNCC_NODE', 'CNCC_PYTHON')) { $taskSavedEnvironment[$taskKey] = [Environment]::GetEnvironmentVariable($taskKey, 'Process') }
+    foreach ($taskKey in @('CNCC_DATA_DIR', 'CNCC_SETTINGS_DIR', 'CNCC_NODE', 'CNCC_PYTHON')) { $taskSavedEnvironment[$taskKey] = [Environment]::GetEnvironmentVariable($taskKey, 'Process') }
     try {
         Set-CnccEnvironment $taskInstalled
         Assert-Test ($env:CNCC_DATA_DIR -eq $taskData) 'Runtime data environment does not match the install manifest.'
+        Assert-Test ($env:CNCC_SETTINGS_DIR -eq $taskData) 'Shared module settings do not match the install manifest.'
         Assert-Test ($env:CNCC_NODE -eq $taskInstalled.node) 'Node environment does not match the install manifest.'
         Assert-Test ($env:CNCC_PYTHON -eq $taskInstalled.python) 'Python environment does not match the install manifest.'
     } finally {

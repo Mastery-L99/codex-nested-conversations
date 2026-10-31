@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codex-nested-conversations",
+  "version": "0.3.0-preview.6",
+  "description": "Browse related local chats in a conversation panel or fullscreen, open them in Codex, and review bulk archives in a separate plugin page.",
+  "author": {
+    "name": "Codex Nested Conversations contributors"
+  },
+  "repository": "https://github.com/Mastery-L99/codex-nested-conversations",
+  "license": "MIT",
+  "keywords": ["codex", "conversations", "archive", "windows", "mcp-app"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Codex 对话管理",
+        "shortDescription": "嵌套对话目录与独立批量归档",
+        "longDescription": "在聊天侧面板或独立页面展开父子聊天，聚焦主聊并打开具体分支。批量归档页面另行提供勾选、范围确认和结果回读。两项功能均适用于当前 Windows 用户的本机 Codex 聊天。原有最近聊天列表中的折叠树需要单独加载侧栏增强。",
+        "developerName": "Codex Nested Conversations contributors",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "defaultPrompt": ["打开嵌套对话目录", "打开批量归档面板"]
+      }
+    }
+  }
+}

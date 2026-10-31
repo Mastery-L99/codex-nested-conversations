@@ -1,6 +1,18 @@
 # FAQ
 
-For `0.2.0-preview.1`. See the [Windows quick start](quickstart.md) for commands.
+## How does this differ from the built-in list of created chats?
+
+Desktop package `26.1027.3384.0` can show a chat's created chats inside its summary. Codex also offers `/side` for ephemeral follow-up conversations. The plugin directory lets you search across roots and follow multiple levels of relationships, including in a conversation panel. The optional adapter adds folding directly to Recents and project lists. [Official command reference](https://learn.chatgpt.com/docs/developer-commands#start-a-side-chat-with-side)
+
+## Can the official desktop app still receive updates?
+
+Both modules keep their files outside the signed desktop package. Windows Store continues to manage that package. On the test machine, the Store successfully upgraded the client from `26.1023.6621.0` to `26.1027.3384.0` after an earlier sidebar enhancement was installed. The standalone archive plugin and the newer nesting panel were installed after that update.
+
+## What should I check after updating the desktop app?
+
+A desktop restart ends the current in-process sidebar adaptation. Open the original app icon and expand a known parent in the nested panel. If you use the original-list adapter, launch the enhanced shortcut and check the same pair there. Changes to the host API, local chat metadata or original sidebar can require a compatible plugin release. The installer’s `--check` reads the package version and plugin registration. Expand and open a chat in the UI to verify actual behavior. No archive operation is needed.
+
+For `0.3.0-preview.6`. See the [Windows quick start](quickstart.md) for commands.
 
 ## Doctor reports missing dependencies or the official app
 
@@ -12,7 +24,7 @@ The installer refuses to overwrite an existing program directory or same-named d
 
 ## The list is still flat after starting
 
-The ordinary official entry may bypass the enhancement, including a pinned official Start-menu icon. Exit through Codex **File → Exit**, then use the dedicated desktop shortcut or the `Start.ps1` command in the quick start. The first start builds a relationship index; the tree uses actual create or fork relationships. Check that the parent is in Recents or the relevant project. Run `doctor.ps1` and check the official app version: this release was tested against package `26.1023.6621.0`; an official update can change the UI or local data structure.
+The ordinary official entry may bypass the enhancement, including a pinned official Start-menu icon. Exit through Codex **File → Exit**, then use the dedicated desktop shortcut or the `Start.ps1` command in the quick start. The first start builds a relationship index; the tree uses actual create or fork relationships. Check that the parent is in Recents or the relevant project. Run `doctor.ps1` and check the official app version: this release was tested against package `26.1027.3384.0`; an official update can change the UI or local data structure.
 
 To keep using your usual pinned position, replace the old official pin once with the enhancement entry and move it where you want it. The same name or icon does not redirect an existing pin. Official All apps entries, protocol links and automatic startup can still bypass the enhancement. See the [user guide](user-guide.md).
 

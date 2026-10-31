@@ -1,20 +1,45 @@
 {
   "name": "codex-nested-conversations",
-  "version": "0.2.0-preview.1",
+  "version": "0.3.0-preview.6",
   "description": "Independent Windows runtime enhancement for nested conversations in the official Codex desktop app",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=22" },
-  "os": ["win32"],
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "win32"
+  ],
   "scripts": {
     "test": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-installation.ps1",
     "test:runtime": "node scripts/test-runtime.cjs",
     "build:release": "python scripts/build-release.py --output-dir dist",
+    "build:plugin": "node scripts/build-plugin.cjs",
+    "build:archive-panel": "node scripts/build-archive-panel.cjs",
     "doctor": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/doctor.ps1",
     "audit:release": "node scripts/release-audit.cjs",
     "install:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",
     "uninstall:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall.ps1"
   },
-  "dependencies": { "playwright": "1.64.1" },
-  "files": ["src/", "scripts/", "tests/", "docs/", "README.md", "README.zh-CN.md", "NOTICE.md", "LICENSE", "runtime-manifest.json"]
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "tests/",
+    "docs/",
+    "README.md",
+    "README.zh-CN.md",
+    "NOTICE.md",
+    "LICENSE",
+    "runtime-manifest.json",
+    "plugin.json",
+    "mcp.json",
+    ".agents/plugins/marketplace.json"
+  ],
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "esbuild": "0.25.11"
+  }
 }

@@ -1,0 +1,20 @@
+{
+  "name": "codex-nested-local",
+  "interface": {
+    "displayName": "Codex 对话管理 · 本地"
+  },
+  "plugins": [
+    {
+      "name": "codex-nested-conversations",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
