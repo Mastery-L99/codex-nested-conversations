@@ -1,6 +1,6 @@
 # Windows 快速开始
 
-本指南适用于 `0.3.0-preview.5`。这是独立的开源增强工具，在官方 Codex 桌面应用的同一窗口中显示嵌套聊天；它不安装第二个 Codex 客户端。当前实机适配的官方应用包版本是 `26.1027.3384.0`，其他版本可能需要适配。
+本指南适用于 `0.3.0-preview.6`。这是独立的开源增强工具，在官方 Codex 桌面应用的同一窗口中显示嵌套聊天；它不安装第二个 Codex 客户端。当前实机适配的官方应用包版本是 `26.1027.3384.0`，其他版本可能需要适配。
 
 ## 1. 准备环境
 
@@ -8,7 +8,7 @@
 
 ## 2. 下载并解压
 
-需要嵌套树时，下载[完整源码包](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-nested-conversations-0.3.0-preview.5-source.zip)，完整解压后进入包含 `package.json`、`scripts` 和 `src` 的目录。只需要批量归档时，直接使用[归档插件包与两步安装说明](independent-modules.zh-CN.md)。
+从原 GPT 图标使用嵌套面板或批量归档，优先采用[给 Agent 的安装指令](install-agent.md)。需要把树加到原项目列表时，下载[完整源码包](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.6/codex-nested-conversations-0.3.0-preview.6-source.zip)，完整解压后进入包含 `package.json`、`scripts` 和 `src` 的目录。只需要批量归档时，直接使用[归档插件包与两步安装说明](independent-modules.zh-CN.md)。
 
 在该文件夹的地址栏输入 `powershell` 并回车，打开 PowerShell。以下依次运行：
 

@@ -2,7 +2,7 @@
 
 批量归档帮助你整理本机 Codex 聊天。侧栏中的“批量归档”按需打开选择面板；你可以按标题筛选、跨多次筛选累积选择，再核对完整范围后提交。
 
-这份说明适用于 [0.3.0-preview.5](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.5)。侧栏入口和插件页面使用同一个归档服务。聊天可以保留在折叠的分支里，归档时无需逐个打开侧栏行或切换当前聊天。
+这份说明适用于 [0.3.0-preview.6](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.6)。侧栏入口和插件页面使用同一个归档服务。聊天可以保留在折叠的分支里，归档时无需逐个打开侧栏行或切换当前聊天。
 
 ## 选择聊天
 

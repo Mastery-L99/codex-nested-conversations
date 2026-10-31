@@ -1,6 +1,6 @@
 {
   "name": "codex-nested-conversations",
-  "version": "0.3.0-preview.5",
+  "version": "0.3.0-preview.6",
   "description": "Independent Windows runtime enhancement for nested conversations in the official Codex desktop app",
   "private": true,
   "license": "MIT",

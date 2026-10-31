@@ -6,9 +6,9 @@ Codex Nested Conversations 帮你在官方 Windows 桌面应用中按层级查�
 
 ## 准备环境
 
-本指南适用于 `0.3.0-preview.5`。需要 Windows 10 或 11、已安装并登录的官方 Codex 桌面应用、Node.js 22 及以上版本（含 npm），以及 Python 3.10 及以上版本。项目在官方包 `26.1027.3384.0` 上测试过；客户端更新后，界面或本地数据结构的变化可能需要项目适配。
+本指南适用于 `0.3.0-preview.6`。需要 Windows 10 或 11、已安装并登录的官方 Codex 桌面应用、Node.js 22 及以上版本（含 npm），以及 Python 3.10 及以上版本。项目在官方包 `26.1027.3384.0` 上测试过；客户端更新后，界面或本地数据结构的变化可能需要项目适配。
 
-下载 [0.3.0-preview.5 源码 ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-nested-conversations-0.3.0-preview.5-source.zip) 并完整解压，也可克隆[源码仓库](https://github.com/Mastery-L99/codex-nested-conversations)，在项目目录打开 PowerShell。以下相对路径均以项目根目录为起点。安装器不会替你下载 Node.js、Python 或 npm，请先自行安装。然后准备项目声明的公开依赖并检查环境：
+下载 [0.3.0-preview.6 源码 ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.6/codex-nested-conversations-0.3.0-preview.6-source.zip) 并完整解压，也可克隆[源码仓库](https://github.com/Mastery-L99/codex-nested-conversations)，在项目目录打开 PowerShell。以下相对路径均以项目根目录为起点。安装器不会替你下载 Node.js、Python 或 npm，请先自行安装。然后准备项目声明的公开依赖并检查环境：
 
 ```powershell
 npm.cmd ci --omit=dev --ignore-scripts

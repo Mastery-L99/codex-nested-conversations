@@ -55,9 +55,18 @@ def read_catalog(codex_home, include_relations=True):
             spec = importlib.util.spec_from_file_location("cncc_relations", Path(__file__).with_name("sync-relations.py"))
             relations = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(relations)
-            with connect_readonly(codex_home / "thread_history_1.sqlite") as history:
-                manifest = relations.build_manifest(history, state, roots)
+            try:
+                with connect_readonly(codex_home / "thread_history_1.sqlite") as history:
+                    manifest = relations.build_manifest(history, state, roots)
+            except sqlite3.Error:
+                # A desktop attachment is independently verifiable without history.
+                # Keep the partial tree for navigation, but never authorize a cascade with it.
+                manifest = relations.build_manifest(None, state, roots)
+                manifest.update(relationsAvailable=False, relationCoverage="attached_only",
+                                relationMessage="仅显示本机记录的直接父子关系，聊天创建历史暂不可读。归档时可取消包含下级，仅归档勾选聊天。")
+                return manifest
             manifest["relationsAvailable"] = True
+            manifest["relationCoverage"] = "history_and_attached"
             return manifest
         except Exception:
             # A damaged or changed relationship source must not remove the flat

@@ -95,6 +95,15 @@ def build(root, destination):
     version = json.loads(sources['package.json'].decode('utf-8-sig'))['version']
     if not re.fullmatch(r'[0-9A-Za-z.+-]+', version):
         raise ValueError('Invalid release version')
+    # The public one-line command pins the bootstrap before executing it.
+    # Check the bytes served by the Git tag (checkout line endings can differ).
+    bootstrap = subprocess.check_output(['git', '-C', str(root), 'show', ':scripts/install-preview.py'])
+    guide = sources['docs/install-agent.md'].decode('utf-8-sig')
+    digest = hashlib.sha256(bootstrap).hexdigest()
+    if (f'VERSION = "{version}"'.encode() not in bootstrap or
+            f"/v{version}/scripts/install-preview.py" not in guide or
+            f"-ne '{digest}'" not in guide):
+        raise ValueError('Agent installation guide does not match the pinned script or release version')
     marketplace = marketplace_sources(root, sources, version)
     destination.mkdir(parents=True, exist_ok=True)
     source = write_archive(destination / f'codex-nested-conversations-{version}-source.zip',

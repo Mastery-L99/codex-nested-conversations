@@ -108,13 +108,30 @@ const initial = [chat(1, 'Alpha parent'), chat(2, 'Alpha child'), chat(3, 'Beta'
     await open();
     assert.equal(await page.getByLabel('同时归档所选主对话的全部下级', { exact: true }).isChecked(), false);
     checks.push('selected_only_option_survives_scope_cancel');
-    await page.evaluate(id => { window.fixture.catalog = window.fixture.catalog.filter(chat => chat.id !== id); }, makeId(2));
-    await page.getByRole('button', { name: '归档所选 2 个', exact: true }).click();
+    // Remove the item and click in the same task to test a change discovered
+    // by the submit guard, before the scheduled sidebar refresh can run.
+    await page.getByRole('button', { name: '归档所选 2 个', exact: true }).evaluate((button, id) => {
+      window.fixture.catalog = window.fixture.catalog.filter(chat => chat.id !== id);
+      button.click();
+    }, makeId(2));
     assert.equal(await page.evaluate(() => window.fixture.previews.length), 2);
     assert.equal((await state()).dialogOpen, true);
     assert.deepEqual(await selected(), [makeId(1)]);
     assert.match(await page.getByRole('alert').textContent(), /聊天列表有变化/);
-    checks.push('stale_selection_requires_new_review');
+    // On the other ordering the sidebar already shows the smaller selection;
+    // its first click must still stop and ask for another review.
+    await page.evaluate(chat => { window.fixture.catalog.push(chat); window.__codexNestedBulk.refresh(); }, initial[1]);
+    await page.locator(`[data-codex-bulk-chat-id="${makeId(2)}"]`).check();
+    await page.evaluate(id => {
+      window.fixture.catalog = window.fixture.catalog.filter(chat => chat.id !== id);
+      window.__codexNestedBulk.refresh();
+    }, makeId(2));
+    await page.getByRole('button', { name: '归档所选 1 个', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.fixture.previews.length), 2);
+    assert.equal((await state()).dialogOpen, true);
+    assert.deepEqual(await selected(), [makeId(1)]);
+    assert.match(await page.getByRole('alert').textContent(), /聊天列表有变化/);
+    checks.push('stale_selection_requires_new_review', 'refreshed_stale_selection_requires_new_review');
     await page.evaluate(id => { window.fixture.catalog.filter(chat => chat.id === id).forEach(chat => chat.title = 'Renamed parent'); }, makeId(1));
     await page.getByRole('button', { name: '归档所选 1 个', exact: true }).click();
     await page.waitForFunction(() => window.fixture.previews.length === 3);

@@ -7,7 +7,7 @@ const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ACTIVE_JOBS = new Set(['queued', 'running', 'stopping']);
 const $ = id => document.getElementById(id);
 const state = { connected: false, connecting: false, catalogReady: false, chats: [], selected: new Set(),
-  query: '', project: '', revision: null, module: {}, relationsAvailable: null, includeDescendants: true, settingBusy: false,
+  query: '', project: '', revision: null, module: {}, relationsAvailable: null, includeDescendants: true, pendingSetting: null,
   previewBusy: false, submitting: false, plan: null, job: null, pollingFailures: 0, stopping: false,
   error: '', oldHost: false, collapsed: new Set(), filterCollapsed: new Set(), focusedId: null, jobExpectations: new Map() };
 let app;
@@ -299,12 +299,14 @@ function renderControls() {
   const ready = moduleReady();
   $('connection-state').textContent = state.oldHost ? '请更新桌面应用' : state.connected ? '官方插件已连接' : state.connecting ? '正在连接插件' : '尚未连接';
   $('connection-state').dataset.tone = state.connected && !state.oldHost ? 'ready' : 'neutral';
-  $('archive-enabled').checked = state.module.archiveEnabled !== false;
-  $('nesting-enabled').checked = state.module.nestingEnabled === true;
-  $('archive-enabled').disabled = !state.connected || state.settingBusy || active || state.submitting || state.previewBusy || !!state.plan;
-  $('nesting-enabled').disabled = !state.connected || state.settingBusy;
-  $('archive-state').textContent = state.module.archiveEnabled === false ? '已关闭' : ready ? '独立运行，可归档' : text(state.module.message) || '等待本地归档服务';
-  $('nesting-state').textContent = state.module.nestingEnabled === true ? state.module.nativeState === 'ready' ? '已开启，原列表已连接' : '已开启，原列表需加载支持' : '已关闭，不影响本页归档';
+  const savingArchive = state.pendingSetting?.key === 'archiveEnabled';
+  const savingNesting = state.pendingSetting?.key === 'nestingEnabled';
+  $('archive-enabled').checked = savingArchive ? state.pendingSetting.value : state.module.archiveEnabled !== false;
+  $('nesting-enabled').checked = savingNesting ? state.pendingSetting.value : state.module.nestingEnabled === true;
+  $('archive-enabled').disabled = !state.connected || !!state.pendingSetting || active || state.submitting || state.previewBusy || !!state.plan;
+  $('nesting-enabled').disabled = !state.connected || !!state.pendingSetting;
+  $('archive-state').textContent = savingArchive ? '正在保存…' : state.module.archiveEnabled === false ? '已关闭' : ready ? '独立运行，可归档' : text(state.module.message) || '等待本地归档服务';
+  $('nesting-state').textContent = savingNesting ? '正在保存…' : state.module.nestingEnabled === true ? state.module.nativeState === 'ready' ? '已开启，原列表已连接' : '已开启，原列表需加载支持' : '已关闭，不影响本页归档';
   const relationUnavailable = state.relationsAvailable === false;
   $('relation-notice').hidden = !relationUnavailable;
   $('relation-notice').textContent = relationUnavailable ? `层级读取暂不可用，可取消包含下级，仅归档勾选聊天。${text(state.module.message) ? ` ${text(state.module.message)}` : ''}` : '';
@@ -340,11 +342,16 @@ async function refreshChats() {
 }
 
 async function changeModule(key, enabled) {
-  if (state.settingBusy || !state.connected) return;
-  state.settingBusy = true; renderControls();
+  if (state.pendingSetting || !state.connected) return;
+  state.pendingSetting = {key, value: enabled}; renderControls();
   try { showError(); acceptModule(await call('set_module_state', { [key]: enabled })); }
-  catch (error) { showError(error); }
-  finally { state.settingBusy = false; renderList(); }
+  catch (error) {
+    // A lost reply can follow a successful save. Restore the service's state
+    // when reachable, otherwise keep the last confirmed value.
+    try { acceptModule(await call('get_module_status')); } catch { /* Service unavailable. */ }
+    showError(error);
+  }
+  finally { state.pendingSetting = null; renderList(); }
 }
 
 function updateSelection(invert) {
@@ -544,7 +551,7 @@ async function connectHost() {
   try {
     if (app) await app.close();
     if (window.parent === window) throw new Error('请从 ChatGPT / Codex 的插件入口打开此页面。');
-    const current = new App({ name: 'Codex Archive Panel', version: '0.3.0-preview.5' }, {}, { strict: true, autoResize: false });
+    const current = new App({ name: 'Codex Archive Panel', version: '0.3.0-preview.6' }, {}, { strict: true, autoResize: false });
     app = current;
     current.ontoolresult = result => {
       if (generation !== connectionGeneration) return;

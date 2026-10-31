@@ -10,7 +10,7 @@ const fs = require('node:fs/promises');
 const {randomUUID} = require('node:crypto');
 const {PassThrough} = require('node:stream');
 const {setImmediate: tick} = require('node:timers/promises');
-const {createArchiveService, serveArchiveStdio, UI_URI, tools, publicError} = require('../src/archive-server.cjs');
+const {createArchiveService, serveArchiveStdio, UI_URI, NESTING_URI, tools, publicError} = require('../src/archive-server.cjs');
 const {createFixture,recycleFixture} = require('./recycle-fixture.cjs');
 const uuid = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const chat = n => ({id:uuid(n), title:`Synthetic chat ${n}`, kind:'codex', hostId:'local', threadSource:'user', createdAtMs:1700000000000+n});
@@ -45,6 +45,25 @@ async function submit(f,args={chatIds:[parent.id]}) {
   const plan=await f.service.planArchive(args),response=await f.service.confirmArchive({planToken:plan.planToken,backgroundReviewToken:plan.backgroundReviewToken});
   return {plan,job:await f.service.waitForJob(response.job.jobId)};
 }
+
+test('nested page reads current relations without archive, and only an explicit, still-listed ID may open',async t=>{
+  const launches=[];
+  const f=fixture(t,{state:{archiveEnabled:false},options:{launchChat:async id=>launches.push(id)}});
+  const manifest=baseManifest();manifest.catalog[0].preview='PRIVATE';
+  manifest.relationsAvailable=false;manifest.relationCoverage='attached_only';f.setManifest(manifest);
+  const result=await f.service.listNestedChats();
+  assert.equal(result.relationsAvailable,false);assert.equal(result.relationCoverage,'attached_only');
+  assert.deepEqual(result.chats.find(row=>row.id===child.id),{id:child.id,title:child.title,parentId:parent.id});
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE/);assert.deepEqual(launches,[]);
+  assert.deepEqual(await f.service.openNestedChat({chatId:child.id}),{requestedChatId:child.id});
+  manifest.catalog=manifest.catalog.filter(row=>row.id!==child.id);f.setManifest(manifest);
+  await assert.rejects(f.service.openNestedChat({chatId:child.id}),code('THREAD_NOT_FOUND'));
+  await assert.rejects(f.service.openNestedChat({chatId:'codex://threads/bad'}),code('THREAD_NOT_FOUND'));
+  assert.deepEqual(launches,[child.id]);assert.deepEqual(f.calls.archive,[]);
+  await f.service.setModules({nestingEnabled:false});
+  assert.deepEqual(await f.service.listNestedChats(),{enabled:false,chats:[],relationsAvailable:false});
+  await assert.rejects(f.service.openNestedChat({chatId:parent.id}),code('NESTING_DISABLED'));assert.deepEqual(launches,[child.id]);
+});
 
 test('a refused desktop write keeps its safe reason in the progress view and saved job',async t=>{
   const root=await createFixture('cncc-refused-writer-');t.after(()=>recycleFixture(root));
@@ -402,12 +421,15 @@ test('MCP handshake, ping, metadata tool, UI resource and visibility work withou
   const f=transport(t);let response=await f.rpc('initialize',{protocolVersion:'2025-11-25',clientInfo:{name:'synthetic',version:'1'}});
   assert.equal(response.result.protocolVersion,'2025-11-25');assert.equal(response.result.serverInfo.name,'codex-conversations-archive');
   assert.equal(f.htmlReads(),0);assert.deepEqual((await f.rpc('ping')).result,{});
-  const listed=(await f.rpc('tools/list')).result.tools;assert.equal(listed.length,8);
+  const listed=(await f.rpc('tools/list')).result.tools;assert.equal(listed.length,11);
   assert.deepEqual(listed.find(value=>value.name==='open_archive_manager')._meta.ui.visibility,['model','app']);
-  for(const item of listed.filter(value=>value.name!=='open_archive_manager'))assert.deepEqual(item._meta.ui.visibility,['app']);
+  const nested=listed.find(value=>value.name==='open_nested_chats');
+  assert.deepEqual(nested._meta.ui,{resourceUri:NESTING_URI,visibility:['model','app']});
+  assert.deepEqual(nested._meta['openai/ui'].entrypoints,[{type:'global'},{type:'thread'}]);
+  for(const item of listed.filter(value=>!['open_archive_manager','open_nested_chats'].includes(value.name)))assert.deepEqual(item._meta.ui.visibility,['app']);
   assert.equal(listed.find(value=>value.name==='confirm_archive').annotations.destructiveHint,true);
   assert.deepEqual(Object.keys(listed.find(value=>value.name==='confirm_archive').inputSchema.properties),['planToken','backgroundReviewToken']);
-  const resources=(await f.rpc('resources/list')).result.resources;assert.equal(resources[0].uri,UI_URI);
+  const resources=(await f.rpc('resources/list')).result.resources;assert.deepEqual(resources.map(row=>row.uri),[UI_URI,NESTING_URI]);
   const resource=(await f.rpc('resources/read',{uri:UI_URI})).result.contents[0];
   assert.equal(resource.mimeType,'text/html;profile=mcp-app');assert.ok(resource.text.includes('Synthetic archive'));
   assert.deepEqual(resource._meta.ui.csp,{connectDomains:[],resourceDomains:[]});assert.equal(f.htmlReads(),1);

@@ -138,11 +138,11 @@ def build_manifest(history, state, roots, limit=None):
     queue = deque(roots)
     visited = set()
     groups = []
-    fork_edges = collect_fork_edges(history, state)
+    fork_edges = collect_fork_edges(history, state) if history is not None else {}
 
     def row_for(ident):
         return state.execute(
-            "SELECT id,name,archived,thread_source,source,agent_path,created_at_ms,created_at,updated_at_ms FROM threads WHERE id=?",
+            "SELECT id,name,archived,thread_source,source,agent_path,created_at_ms,created_at,updated_at_ms,attached_thread_parent_id FROM threads WHERE id=?",
             (ident,)).fetchone()
 
     def node(ident, fallback=""):
@@ -173,7 +173,7 @@ def build_manifest(history, state, roots, limit=None):
             "AND item_type='mcpToolCall' "
             "AND json_extract(item_json,'$.server')='codex_app' "
             "AND json_extract(item_json,'$.tool')='create_thread' "
-            "ORDER BY rollout_ordinal", (parent_id,))
+            "ORDER BY rollout_ordinal", (parent_id,)) if history is not None else ()
         for call in calls:
             # Forks retain earlier history. A creation event predating this
             # fork's own creation belongs to its source, not to the fork.
@@ -200,12 +200,14 @@ def build_manifest(history, state, roots, limit=None):
                 host = result.get("hostId")
                 if not valid_uuid(child_id) or host != "local" or child_id == parent_id:
                     continue
-                if classify_thread(row_for(child_id)) != "eligible":
+                child_row = row_for(child_id)
+                if classify_thread(child_row) != "eligible" or child_row["attached_thread_parent_id"] not in (None, parent_id):
                     continue
                 children[child_id] = node(child_id, arguments.get("title", ""))
                 sources.append("create_thread:" + call["item_id"])
         for child_id, source in fork_edges.get(parent_id, {}).items():
-            if classify_thread(row_for(child_id)) != "eligible":
+            child_row = row_for(child_id)
+            if classify_thread(child_row) != "eligible" or child_row["attached_thread_parent_id"] not in (None, parent_id):
                 continue
             children[child_id] = node(child_id)
             sources.append(source)

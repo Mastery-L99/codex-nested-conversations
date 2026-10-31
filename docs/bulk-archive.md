@@ -2,7 +2,7 @@
 
 Bulk archive helps organize local Codex chats. Open **批量归档** (Bulk archive) in the sidebar when you need it, filter by title, build a selection across filters, and review the full scope before submitting.
 
-This guide covers [0.3.0-preview.5](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.5). Both the toolbar and plugin page use the same archive service. It can archive a chat inside a collapsed branch without opening a sidebar row or switching chats.
+This guide covers [0.3.0-preview.6](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.6). Both the toolbar and plugin page use the same archive service. It can archive a chat inside a collapsed branch without opening a sidebar row or switching chats.
 
 ## Choose chats
 

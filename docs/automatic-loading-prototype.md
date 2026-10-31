@@ -1,6 +1,6 @@
 # Original-icon loading prototype / 原图标自动加载原型
 
-The original-icon loader described here is experimental. The supported nested sidebar in `0.3.0-preview.5` uses the project's dedicated shortcut. A cold start from the original Windows app icon has not passed acceptance.
+The original-icon loader described here is experimental. The supported nested sidebar in `0.3.0-preview.6` uses the project's dedicated shortcut. A cold start from the original Windows app icon has not passed acceptance.
 
 ## 中文
 

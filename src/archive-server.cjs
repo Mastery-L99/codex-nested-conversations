@@ -14,10 +14,29 @@ const {createArchiveAppServer,backgroundTitle}=require('./archive-app-server.cjs
 const {withNamedMutex}=require('./windows-mutex.cjs');
 const run=promisify(execFile);
 const UI_URI='ui://codex-conversations/archive-manager';
+const NESTING_URI='ui://codex-conversations/nested-chats';
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const active=new Set(['queued','running','stopping']);
 function fail(code,message){return Object.assign(new Error(message),{code});}
 function hash(value){return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');}
+async function launchDesktopChat(id){
+  if(process.platform!=='win32'||!UUID.test(id))throw fail('DESKTOP_OPEN_FAILED');
+  // The argument is already a catalogued local UUID. Only the official AppX
+  // family receives the request, even if another app registered this scheme.
+  const script=`
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null=[Windows.System.Launcher,Windows.System,ContentType=WindowsRuntime]
+$options=[Windows.System.LauncherOptions,Windows.System,ContentType=WindowsRuntime]::new()
+$options.TargetApplicationPackageFamilyName='OpenAI.Codex_2p2nqsd0c76g0'
+$operation=[Windows.System.Launcher]::LaunchUriAsync([Uri]('codex://threads/'+$env:CNCC_OPEN_CHAT_ID),$options)
+$asTask=[System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation' + [char]96 + '1' } | Select-Object -First 1
+$task=$asTask.MakeGenericMethod([bool]).Invoke($null,@($operation))
+if(!$task.GetAwaiter().GetResult()){throw 'The desktop did not accept this link'}
+`;
+  await run('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],
+    {windowsHide:true,timeout:15000,env:{...process.env,CNCC_OPEN_CHAT_ID:id}});
+}
 function publicError(error){
   const code=typeof error?.code==='string'?error.code:'ARCHIVE_UNAVAILABLE';
   if(code==='APP_SERVER_RPC_FAILED'&&error.details){
@@ -55,6 +74,9 @@ function publicError(error){
     DESKTOP_TURN_ACTIVE:'当前聊天或它的下级仍在执行任务，已在提交前停止。请等任务结束后重新检查范围。',
     OFFICIAL_APP_SERVER_UNAVAILABLE:'未找到可用的官方 Codex 程序，请检查桌面客户端是否安装正常。',
     THREAD_NOT_FOUND:'当前聊天已不在本机目录中，请刷新后重新选择。',
+    NESTING_DISABLED:'嵌套对话已关闭。可在批量归档面板的功能开关中开启。',
+    NESTING_CATALOG_UNAVAILABLE:'未能读取本机聊天目录。请检查桌面端能否找到 Python，以及本机 Codex 数据是否可用。',
+    DESKTOP_OPEN_FAILED:'Windows 未能打开这个聊天。可在官方客户端查找下方的聊天 ID。',
     READ_ONLY_DATABASE_UNAVAILABLE:'暂时无法读取本机聊天状态，请稍后重新检查范围。',
     IMPLICIT_DESCENDANTS_OUTSIDE_SCOPE:'提交前发现确认清单以外的下级记录，已停止。请重新检查范围。',
     scope_limit:'聊天和后台子任务合计超过 256 条，请缩小范围后分批处理。',
@@ -113,8 +135,26 @@ function createArchiveService(options={}){
     }));
     const status=await moduleStatus();
     if(manifest.relationsAvailable===false)status.module.message=manifest.relationMessage||'层级读取暂不可用，可取消包含下级，仅归档勾选聊天。';
-    return {...status,chats,relationsAvailable:manifest.relationsAvailable!==false,
+    return {...status,chats,relationsAvailable:manifest.relationsAvailable!==false,relationCoverage:manifest.relationCoverage,
       catalogRevision:hash(chats.map(chat=>[chat.id,chat.title,chat.parentId,chat.createdAtMs,chat.threadSource]))};
+  }
+  async function listNestedChats(){
+    if(closed)throw fail('SERVER_STOPPED');
+    if(!(await store.read()).nestingEnabled)return {enabled:false,chats:[],relationsAvailable:false};
+    let data;try{data=await listChats();}catch{throw fail('NESTING_CATALOG_UNAVAILABLE');}
+    if(!data.module.nestingEnabled)return {enabled:false,chats:[],relationsAvailable:false};
+    return {enabled:true,relationsAvailable:data.relationsAvailable,relationCoverage:data.relationCoverage,
+      chats:data.chats.map(({id,title,parentId})=>({id,title,parentId}))};
+  }
+  async function openNestedChat({chatId}){
+    if(!UUID.test(chatId))throw fail('THREAD_NOT_FOUND');
+    const catalog=await listNestedChats();
+    if(!catalog.enabled)throw fail('NESTING_DISABLED');
+    const chat=catalog.chats.find(item=>item.id===chatId);
+    if(!chat)throw fail('THREAD_NOT_FOUND');
+    if(closed||!(await store.read()).nestingEnabled)throw fail('NESTING_DISABLED');
+    try{await (options.launchChat||launchDesktopChat)(chat.id);}catch{throw fail('DESKTOP_OPEN_FAILED');}
+    return {requestedChatId:chat.id};
   }
   async function collectBackground(scope,signal){
     const explicit=new Set(scope.items.map(chat=>chat.id));
@@ -261,14 +301,18 @@ function createArchiveService(options={}){
     return moduleStatus();
   }
   async function dispose(){closed=true;for(const job of jobs.values())if(active.has(job.status))job.controller.abort();provider.dispose?.();await persistQueue.catch(()=>{});}
-  return {listChats,planArchive,confirmArchive,getJob,stopJob,moduleStatus,setModules,dispose,
+  return {listChats,listNestedChats,openNestedChat,planArchive,confirmArchive,getJob,stopJob,moduleStatus,setModules,dispose,
     waitForJob:async id=>{const job=jobs.get(id);if(job)await job.done;return job?viewJob(job):null;}};
 }
 
 const empty={type:'object',properties:{},additionalProperties:false};
 const tools=[
-  {name:'open_archive_manager',description:'打开独立批量归档页面；嵌套显示未加载时也可使用。',inputSchema:empty,
+  {name:'open_archive_manager',title:'批量归档',description:'打开独立批量归档页面；嵌套显示未加载时也可使用。',inputSchema:empty,
     annotations:{readOnlyHint:true},_meta:{ui:{resourceUri:UI_URI,visibility:['model','app']},'openai/ui':{entrypoints:[{type:'global'},{type:'thread'}]}}},
+  {name:'open_nested_chats',title:'嵌套对话',description:'在官方插件页面或聊天侧面板查看父子聊天目录。',inputSchema:empty,
+    annotations:{readOnlyHint:true},_meta:{ui:{resourceUri:NESTING_URI,visibility:['model','app']},'openai/ui':{entrypoints:[{type:'global'},{type:'thread'}]}}},
+  {name:'list_nested_chats',description:'供嵌套目录读取本机聊天标题和上级关系。',inputSchema:empty,annotations:{readOnlyHint:true},_meta:{ui:{visibility:['app']}}},
+  {name:'open_nested_chat',description:'在用户点击后，请求官方 Windows 客户端打开选中的本机聊天。',inputSchema:{type:'object',properties:{chatId:{type:'string'}},required:['chatId'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
   {name:'list_chats',description:'读取可归档的本机聊天元数据，不读取正文。',inputSchema:empty,annotations:{readOnlyHint:true},_meta:{ui:{visibility:['app']}}},
   {name:'plan_archive',description:'生成待用户确认的归档范围，不执行归档。',inputSchema:{type:'object',properties:{chatIds:{type:'array',items:{type:'string'},minItems:1,maxItems:256},includeDescendants:{type:'boolean'},catalogRevision:{type:'string'}},required:['chatIds'],additionalProperties:false},annotations:{readOnlyHint:true},_meta:{ui:{visibility:['app']}}},
   {name:'confirm_archive',description:'用户确认已展示的聊天与后台子任务后，提交这个范围的一次性确认。',inputSchema:{type:'object',properties:{planToken:{type:'string'},backgroundReviewToken:{type:'string'}},required:['planToken'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
@@ -305,7 +349,9 @@ function rpcErrorCode(error){
 }
 function serveArchiveStdio({service=createArchiveService(),input=process.stdin,output=process.stdout,readHtml=()=>fs.readFile(path.join(__dirname,'archive-panel.html'),'utf8')}={}){
   let initialized=false,closed=false,buffer='';const decoder=new StringDecoder('utf8');
-  const handlers={open_archive_manager:()=>service.moduleStatus(),list_chats:()=>service.listChats(),plan_archive:args=>service.planArchive(args),
+  const handlers={open_archive_manager:()=>service.moduleStatus(),open_nested_chats:async()=>({view:'nested-chats'}),
+    list_nested_chats:()=>service.listNestedChats(),open_nested_chat:args=>service.openNestedChat(args),
+    list_chats:()=>service.listChats(),plan_archive:args=>service.planArchive(args),
     confirm_archive:args=>service.confirmArchive(args),get_job:args=>service.getJob(args),stop_job:args=>service.stopJob(args),
     get_module_status:()=>service.moduleStatus(),set_module_state:args=>service.setModules(args)};
   function send(value){if(!closed)output.write(JSON.stringify({jsonrpc:'2.0',...value})+'\n');}
@@ -324,21 +370,26 @@ function serveArchiveStdio({service=createArchiveService(),input=process.stdin,o
         if(initialized)throw fail('ALREADY_INITIALIZED');initialized=true;
         const supported=['2024-11-05','2025-03-26','2025-06-18','2025-11-25','2026-07-28'];
         result={protocolVersion:supported.includes(message.params?.protocolVersion)?message.params.protocolVersion:'2025-11-25',
-          capabilities:{tools:{},resources:{}},serverInfo:{name:'codex-conversations-archive',version:'0.3.0-preview.5'}};
+          capabilities:{tools:{},resources:{}},serverInfo:{name:'codex-conversations-archive',version:'0.3.0-preview.6'}};
       }else{
         if(!initialized)throw fail('NOT_INITIALIZED');
         switch(message.method){
           case 'ping':result={};break;
           case 'tools/list':result={tools};break;
-          case 'resources/list':result={resources:[{uri:UI_URI,name:'批量归档',mimeType:'text/html;profile=mcp-app'}]};break;
-          case 'resources/read':if(message.params?.uri!==UI_URI)throw fail('UNKNOWN_RESOURCE');result={contents:[{uri:UI_URI,mimeType:'text/html;profile=mcp-app',text:await readHtml(),_meta:{ui:{csp:{connectDomains:[],resourceDomains:[]}}}}]};break;
+          case 'resources/list':result={resources:[{uri:UI_URI,name:'批量归档',mimeType:'text/html;profile=mcp-app'},{uri:NESTING_URI,name:'嵌套对话',mimeType:'text/html;profile=mcp-app'}]};break;
+          case 'resources/read':{
+            const uri=message.params?.uri;if(uri!==UI_URI&&uri!==NESTING_URI)throw fail('UNKNOWN_RESOURCE');
+            let html=await readHtml();
+            if(uri===NESTING_URI)html=html.replace('<html lang="zh-CN">','<html lang="zh-CN" data-cncc-view="nested">').replace('<title>批量归档</title>','<title>嵌套对话</title>');
+            result={contents:[{uri,mimeType:'text/html;profile=mcp-app',text:html,_meta:{ui:{csp:{connectDomains:[],resourceDomains:[]}}}}]};break;
+          }
           case 'tools/call':{
             const name=message.params?.name;
             if(typeof name!=='string'||!Object.hasOwn(handlers,name))throw fail('UNKNOWN_TOOL');
             const handler=handlers[name],schema=tools.find(tool=>tool.name===name).inputSchema;
             const args=Object.hasOwn(message.params,'arguments')?message.params.arguments:{};
             if(!matchesSchema(args,schema))throw fail('INVALID_ARGUMENTS');
-            try{const data=await handler(args);result={content:[{type:'text',text:name==='open_archive_manager'?'已准备批量归档管理页面。':JSON.stringify(data)}],structuredContent:data};}
+            try{const data=await handler(args);result={content:[{type:'text',text:name==='open_archive_manager'?'已准备批量归档管理页面。':name==='open_nested_chats'?'已准备嵌套对话目录。':JSON.stringify(data)}],structuredContent:data};}
             catch(error){const value=publicError(error);result={isError:true,content:[{type:'text',text:value.message}],structuredContent:{error:value}};}
             break;
           }
@@ -359,4 +410,4 @@ function serveArchiveStdio({service=createArchiveService(),input=process.stdin,o
   return {stop,dispatch};
 }
 if(require.main===module){const server=serveArchiveStdio();process.on('SIGINT',()=>void server.stop());process.on('SIGTERM',()=>void server.stop());}
-module.exports={createArchiveService,serveArchiveStdio,UI_URI,tools,publicError};
+module.exports={createArchiveService,serveArchiveStdio,UI_URI,NESTING_URI,tools,publicError};

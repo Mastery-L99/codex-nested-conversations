@@ -41,7 +41,7 @@ const catalog = [chat(1, 'Alpha parent', { projectName: '项目甲' }), chat(2, 
         if (fixture.omitJobField) delete value[fixture.omitJobField];
         return value;
       };
-      window.addEventListener('message', event => {
+      window.addEventListener('message', async event => {
         if (event.source !== frame.contentWindow || event.data?.jsonrpc !== '2.0') return;
         const message = event.data;
         if (message.method === 'ui/initialize') {
@@ -58,6 +58,8 @@ const catalog = [chat(1, 'Alpha parent', { projectName: '项目甲' }), chat(2, 
         try {
           if (name === 'get_module_status') return response(message.id, { module: fixture.module, activeJob: fixture.activeJob || null });
           if (name === 'set_module_state') {
+            if (fixture.holdSetting) await new Promise(resolve => { fixture.releaseSetting = resolve; });
+            if (fixture.commitBeforeFailure) Object.assign(fixture.module, args);
             if (fixture.failSetting) throw new Error('设置保存失败');
             Object.assign(fixture.module, args); return response(message.id, { module: fixture.module });
           }
@@ -141,7 +143,7 @@ const catalog = [chat(1, 'Alpha parent', { projectName: '项目甲' }), chat(2, 
   try {
     let frame = await open(); await ready(frame);
     assert.equal(await page.evaluate(() => window.fixture.appInfo.name), 'Codex Archive Panel');
-    assert.equal(await page.evaluate(() => window.fixture.appInfo.version), '0.3.0-preview.5');
+    assert.equal(await page.evaluate(() => window.fixture.appInfo.version), '0.3.0-preview.6');
     assert.equal(await frame.locator('[data-chat-id]').count(), 6);
     assert.equal(await frame.locator('.chat-list img').count(), 0);
     assert.equal(await frame.getByText('<img src=x onerror=alert(1)>', { exact: true }).count(), 1);
@@ -226,6 +228,26 @@ const catalog = [chat(1, 'Alpha parent', { projectName: '项目甲' }), chat(2, 
     assert.equal(await frame.getByRole('button', { name: /检查归档范围/ }).isDisabled(), true);
     assert.deepEqual(await calls('confirm_archive'), []);
     checks.push('backend_unavailable_disables_archive');
+
+    for (const [failSetting, commitBeforeFailure] of [[false, false], [true, false], [true, true]]) {
+      frame = await open({ holdSetting: true, failSetting, commitBeforeFailure }); await ready(frame);
+      const toggle = frame.getByRole('switch', { name: '启用嵌套显示' });
+      await toggle.check(); await page.waitForFunction(() => typeof window.fixture.releaseSetting === 'function');
+      assert.equal(await toggle.isChecked(), true); assert.equal(await toggle.isDisabled(), true);
+      await frame.getByText('正在保存…', { exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => window.fixture.module.nestingEnabled), false);
+      await page.evaluate(() => window.fixture.releaseSetting());
+      await page.waitForFunction(() => !document.querySelector('iframe').contentDocument.querySelector('#nesting-enabled').disabled);
+      const saved = !failSetting || commitBeforeFailure;
+      assert.equal(await toggle.isChecked(), saved);
+      assert.equal(await page.evaluate(() => window.fixture.module.nestingEnabled), saved);
+      if (failSetting) {
+        await frame.getByRole('alert').filter({ hasText: '设置保存失败' }).waitFor();
+        assert.ok((await calls('get_module_status')).length >= 2);
+      }
+      assert.equal((await calls('set_module_state')).length, 1);
+    }
+    checks.push('module_switch_holds_pending_value', 'failed_switch_restores_service_state', 'lost_save_reply_reads_committed_state');
 
     frame = await open({ badPlanCount: true }); await ready(frame); await row(frame, 3).check();
     await frame.getByRole('button', { name: /检查归档范围/ }).click();

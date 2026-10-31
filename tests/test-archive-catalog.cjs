@@ -52,13 +52,31 @@ c.commit();c.close()`;
   }
 });
 for(const history of ['missing','broken','schema']){
-  test(`${history} relationship database leaves a complete flat catalog available without writes`,async()=>{
+  test(`${history} history retains official attached chats for navigation but cannot authorize cascading writes`,async()=>{
     const p=await fixture(history,history);const before=await hashes(p);const {manifest,text}=await read(p);
-    assert.equal(manifest.relationsAvailable,false);assert.deepEqual(manifest.groups,[]);assert.equal(manifest.catalog.length,2);
+    assert.equal(manifest.relationsAvailable,false);assert.equal(manifest.relationCoverage,'attached_only');
+    assert.deepEqual(manifest.groups.map(g=>[g.parent.id,g.children.map(c=>c.id)]),[[uuid(1),[uuid(2)]]]);assert.equal(manifest.catalog.length,2);
     assert.deepEqual(new Set(manifest.catalog.map(c=>c.id)),new Set([uuid(1),uuid(2)]));
     assert.match(manifest.relationMessage,/取消包含下级/);assert(!text.includes('PRIVATE_'));assert.deepEqual(await hashes(p),before);
   });
 }
+test('the official parent overrides conflicting create and fork history',async()=>{
+  const p=await fixture('native-parent-wins');
+  const setup=`import sqlite3,json,sys,pathlib
+folder=pathlib.Path(sys.argv[1]); caller,child=sys.argv[2:]
+with sqlite3.connect(folder/'state_5.sqlite') as state:
+ state.execute("insert into threads(id,name,archived,thread_source,source,created_at,updated_at_ms) values(?,?,0,'user','vscode',1,1000)",(caller,'Other'))
+with sqlite3.connect(folder/'thread_history_1.sqlite') as history:
+ for n,tool in enumerate(('create_thread','fork_thread')):
+  result={'threadId':child,'hostId':'local','sourceThreadId':caller,'status':'created'}
+  call={'type':'mcpToolCall','server':'codex_app','tool':tool,'status':'completed','arguments':{'threadId':caller,'target':{'type':'projectless'}},'result':{'structuredContent':result}}
+  history.execute('insert into thread_items values(?,?,?,?,?,?)',(caller,tool,'mcpToolCall',json.dumps(call),n,5000))`;
+  await run(python,['-c',setup,p,uuid(9),uuid(2)],options(p));
+  const before=await hashes(p);const {manifest}=await read(p);
+  assert.equal(manifest.relationsAvailable,true);assert.equal(manifest.relationCoverage,'history_and_attached');
+  assert.deepEqual(manifest.groups.map(g=>[g.parent.id,g.children.map(c=>c.id)]),[[uuid(1),[uuid(2)]]]);
+  assert.deepEqual(await hashes(p),before);
+});
 test('explicit no-relations mode never needs a relationship database',async()=>{
   const p=await fixture('explicit-flat','missing');const before=await hashes(p);
   const script=`import importlib.util,json,sys\nfrom pathlib import Path\nspec=importlib.util.spec_from_file_location('catalog_fixture',Path(sys.argv[1]));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\nprint(json.dumps(m.read_catalog(Path(sys.argv[2]),include_relations=False)))`;

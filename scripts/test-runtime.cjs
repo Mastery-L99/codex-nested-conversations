@@ -40,9 +40,16 @@ const fixtures = [
   ['test-toolbar-archive.cjs', true],
   ['test-archive-catalog.cjs', true],
   ['test-archive-panel.cjs', false],
+  ['test-nesting-panel.cjs', true],
   ['test-python-catalog.cjs', true],
   ['test-event-index.cjs', true]
 ];
+const installerChecks = spawnSync(python, ['-B', path.join(root, 'tests/test-install-preview.py')],
+  {cwd:root, windowsHide:true, stdio:'inherit'});
+if (installerChecks.error || installerChecks.status !== 0) {
+  if (installerChecks.error) console.error(installerChecks.error.message);
+  process.exit(installerChecks.status || 1);
+}
 for (const [file, nodeTest] of fixtures) {
   console.log('\nRunning synthetic fixture: ' + file);
   const result = spawnSync(process.execPath,
