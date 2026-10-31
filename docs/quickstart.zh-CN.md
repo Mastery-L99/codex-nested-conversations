@@ -1,6 +1,6 @@
 # Windows 快速开始
 
-本指南适用于 `0.2.0-preview.1`。这是独立的开源增强工具，在官方 Codex 桌面应用的同一窗口中显示嵌套聊天；它不安装第二个 Codex 客户端。当前实机适配的官方应用包版本是 `26.1023.6621.0`，其他版本可能需要适配。
+本指南适用于 `0.3.0-preview.5`。这是独立的开源增强工具，在官方 Codex 桌面应用的同一窗口中显示嵌套聊天；它不安装第二个 Codex 客户端。当前实机适配的官方应用包版本是 `26.1027.3384.0`，其他版本可能需要适配。
 
 ## 1. 准备环境
 
@@ -8,12 +8,12 @@
 
 ## 2. 下载并解压
 
-项目公开发布后，从其 GitHub 仓库页面下载此版本源码：若有该版本的发布页面，选择对应的 Source code ZIP；也可以在仓库页面通过 **Code → Download ZIP** 下载当前源码。后者可能包含更新，使用时以其中 `package.json` 的版本为准。当前尚无可提供的公开下载地址。将 ZIP 完整解压到自己的普通文件夹，进入解压后的项目根目录——这里应能看到 `package.json`、`scripts` 和 `src`。
+需要嵌套树时，下载[完整源码包](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-nested-conversations-0.3.0-preview.5-source.zip)，完整解压后进入包含 `package.json`、`scripts` 和 `src` 的目录。只需要批量归档时，直接使用[归档插件包与两步安装说明](independent-modules.zh-CN.md)。
 
 在该文件夹的地址栏输入 `powershell` 并回车，打开 PowerShell。以下依次运行：
 
 ```powershell
-npm ci --ignore-scripts
+npm.cmd ci --omit=dev --ignore-scripts
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
 ```
 

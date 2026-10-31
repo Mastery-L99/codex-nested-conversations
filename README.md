@@ -1,18 +1,21 @@
 # Codex Nested Conversations
 
-Keep a complex piece of work together in the official Codex desktop app. Codex Nested Conversations adds a hierarchy to related chats, so a main conversation and its descendants remain easy to find and follow when your sidebar grows crowded.
+Keep a large piece of work easy to follow in the official Windows Codex app. Organize related chats beneath a main chat, then review and archive the work you have finished.
 
-**Version 0.2.0-preview.1** · Windows · [MIT license](LICENSE) · [中文说明](README.zh-CN.md)
+**0.3.0-preview.5 · Windows public preview** · [中文](README.zh-CN.md) · [MIT license](LICENSE)
 
-This is an independent runtime enhancement for the official Windows app. It uses the same installed client and account; it does not create a second profile. It is not an officially supported sidebar plugin, and changes to the app's interface or local data structures may require an update to this project.
+[Download the Windows preview](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.5) · [Quick start](docs/quickstart.md)
 
-## What you can do
+This project keeps **nested conversations and bulk archive together, with separate switches and separate loading paths**. It uses the installed official client and the current local account. It does not create another official client or profile, replace the updater, or enable ChatGPT at Windows sign-in.
 
-- **Follow a conversation tree.** Related local Codex chats appear beneath their parent across Recents and project lists, in both Codex and ChatGPT modes. Expand a branch to return to the work you need.
-- **Let relationships update as you work.** Successful `create_thread` and `fork_thread` relationships are discovered automatically. Native events trigger updates, with file changes as a fallback; there is no fixed 20-second polling loop.
-- **Archive a branch together.** Use the chat menu or `Ctrl+Shift+A`, review the full scope, then choose whether to archive the parent and its descendants or only the parent. Collapsed descendants are included in the full branch. The enhancement archives descendants first, checks each result, and stops if an operation fails.
+## Two modules
 
-The tree represents relationships between local Codex chats. Codex subagents are a separate concept and are not added to the tree as child chats. Cascade archive applies to eligible local Codex chats with discovered descendants; it does not cascade through native ChatGPT conversations. Cascading delete is not implemented: the tested native interface does not provide a usable Delete action.
+| | What it adds | How it runs |
+| --- | --- | --- |
+| Nested conversations | Expandable parent/child chat lists in Recents and projects | A separately loaded adapter for the original sidebar |
+| Independent bulk archive | A plugin page for filtering, selecting, reviewing scope, archiving, and checking progress | The official plugin host and local `codex app-server`; no sidebar adapter, debugging connection, or Windhawk required |
+
+The nested view can display supported local Codex chats in both the Codex and ChatGPT modes. **Archive operations cover eligible local Codex chats only.** Cloud ChatGPT chats, remote hosts, and other accounts are outside the archive module's scope. Subagents remain a separate concept from child chats.
 
 ```text
 Launch plan
@@ -22,65 +25,77 @@ Launch plan
 └─ Validation
 ```
 
-See [loading and update compatibility](docs/architecture.md) for the current adapter and future plugin options.
+The archive page has its own switch. A broken or disabled nested view does not have to remove archive access. The nesting switch affects the original lists only while the sidebar adapter is loaded. See [independent modules](docs/independent-modules.md).
 
-## Requirements
+## Current preview status
 
-- Windows 10 or 11 and the official Codex desktop app. The tested app package version is `26.1023.6621.0`.
-- Node.js 22 or later, npm, and Python 3.10 or later.
-- The project's public Playwright dependency, pinned to `1.64.1` in the lockfile. The enhancement connects to the installed app and does not require a Playwright browser download.
+The bulk selector groups children under their parent chats. A check mark and a full-row highlight identify direct selections. Children covered by a selected parent have a separate “随上级归档” label. The toolbar and plugin page call the same archive service, including for chats absent from the current sidebar.
 
-## Get started
+The review names any background tasks that the official archive will also affect and shows their owning chats. Progress counts verified chats and background tasks separately. A change to the reviewed scope requires a fresh review.
 
-Download the [0.2.0-preview.1 source ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.2.0-preview.1/codex-nested-conversations-0.2.0-preview.1-source.zip) from the [preview release](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.2.0-preview.1), or clone the [repository](https://github.com/Mastery-L99/codex-nested-conversations). Extract the entire archive and open PowerShell in the project directory. Install the public dependencies, check your environment, preview the installation, and install:
+The 0.3 plugin is now installed in the daily environment. A dedicated single-chat archive has passed the complete flow in the actual desktop host: open the MCP App, filter and select, review the complete scope, return to edit without losing the selection, confirm, and view the result. The page reported one processed and verified item with no failures; the saved job and an independent local status read agreed. This live check covers that single-chat flow, rather than every multilevel or failure scenario.
+
+Module independence has passed live checks: turning nesting off preserves the archive bridge; turning archive off preserves the tree and blocks enhanced archive plans. With the sidebar companion completely stopped, the independent backend archived a dedicated test chat through the official local app-server. Comparing archive flags for all chats that existed before the operation found only that test chat changed. Both modules were then restored without restarting the official app.
+
+The original sidebar adapter has passed live nested-list and native archive checks. It still needs its loading path. Opening the original official icon does not yet guarantee that the tree loads. The Windhawk approach is an uninstalled prototype, with no Windows service or sign-in startup entry installed by this preview. The user's ChatGPT sign-in startup setting remains off.
+
+This is an independent project. The plugin page uses the official extension mechanism; modifications to the original sidebar rely on app implementation details. Official updates remain enabled, and changes to UI, API, or local schemas may require adaptation. The current development checks use official package `26.1027.3384.0`.
+
+## Downloads and setup
+
+| What you want | Download and open |
+| --- | --- |
+| Bulk archive in the plugin page | Download the [archive plugin package](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-conversation-manager-0.3.0-preview.5-marketplace.zip), extract it to a folder you plan to keep, then register it with the two plugin commands below. |
+| Nested sidebar and bulk archive | Download the [full source package](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-nested-conversations-0.3.0-preview.5-source.zip), extract it and run the full installer below. Open the **Codex Nested Conversations** desktop shortcut to see the hierarchy in Recents and projects. |
+
+Both packages require Windows, a signed-in official Codex desktop app, Node.js 22+ and Python 3.10+. The archive-only ZIP includes the built page. Open PowerShell in the extracted directory containing `.agents` and `plugin`, then run:
 
 ```powershell
-npm ci --ignore-scripts
+$cli = Join-Path (Get-AppxPackage OpenAI.Codex).InstallLocation 'app\resources\codex.exe'
+& $cli plugin marketplace add .
+& $cli plugin add codex-nested-conversations@codex-nested-local
+```
+
+Open the archive page in Codex, or ask a chat to open the bulk archive panel. Node.js and Python must be on the desktop app's PATH. SHA-256 files for both downloads are available on the [release page](https://github.com/Mastery-L99/codex-nested-conversations/releases/tag/v0.3.0-preview.5).
+
+To prepare a complete enhancement installation from the source directory:
+
+```powershell
+npm.cmd ci --omit=dev --ignore-scripts
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -WhatIf
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-The installer creates a separate **Codex Nested Conversations** desktop shortcut. It does not start the app automatically or replace the official entry. If Codex is already running normally, quit it through its menu first, then launch from the enhancement shortcut. Launching from the normal official entry does not currently load the enhancement.
+The installer creates separate program and data directories. It prepares a clean `plugin` subdirectory and a local marketplace pointing only to that directory. It does not automatically register the plugin or start the official app. Follow [independent module setup](docs/independent-modules.md) to add that local source; use the installation root as the marketplace source. Avoid registering a development checkout: the host can copy its dependencies and local files into its plugin cache.
 
-To make your usual pinned icon open the enhancement, replace the old official pin once with the enhancement launch entry and move the new pin to your preferred position. A matching name or icon does not redirect the old pin. After replacement, clicking that pin uses the enhancement entry; launches from official All apps entries, protocol links or automatic startup may still use ordinary mode. See the [user guide](docs/user-guide.md).
+Developers can build a clean plugin-only directory with:
 
-The installer uses separate program and data directories under `%LOCALAPPDATA%`. It stops rather than overwrite an existing installation or shortcut. For a reinstall after uninstalling, add `-ReuseData` to reuse the retained data directory if it has this project's identity marker.
+```powershell
+npm run build:plugin -- --output-dir .\dist\archive-plugin
+```
 
-## Use the tree
+This output contains the plugin itself, without a marketplace catalog. It is separate from the complete installer and the source-release archive.
 
-Create or fork a related local Codex chat using Codex's normal workflow. Once the relationship is discovered, find it beneath its parent and expand or collapse the branch. When you are ready to archive a parent with discovered descendants, open its archive menu or press `Ctrl+Shift+A`. The shortcut also works from the conversation body and composer when the current chat can be identified. Review the list in the confirmation dialog before choosing the scope.
+## Use and control
 
-Other applications can capture the same keyboard shortcut. If it does not reach Codex, check for a conflicting shortcut. `Ctrl+Alt+Shift+A` is not supported.
+Select chats in the archive page, review the full list, and confirm. Including discovered descendants is enabled by default. When relationship data is unavailable, the page requires you to turn that option off before archiving selected chats alone. Each operation is checked; a failure stops later submissions. Stop leaves completed work in place, and the current request may already have completed. There is no bulk undo or bulk delete.
 
-For detailed steps and troubleshooting, see the [user guide](docs/user-guide.md).
+The official archive API may include implicit background descendants and has no atomic condition limiting execution to the reviewed list. The module checks again before submission and reports unexpected effects. Avoid creating new descendants in the same scope while archiving.
 
-## Stop or uninstall
+When the sidebar adapter is loaded, the native menu and `Ctrl+Shift+A` can review an eligible parent's discovered descendants. Other applications may intercept that shortcut. No alternative archive hotkey is added. Relationships update from native events with file-change fallback; there is no fixed 20-second idle scan. The archive page checks progress while a job is active.
 
-To remove the enhancement from the current window and stop its companion process:
+Use the page's separate switches to disable either module. Disabling the entire plugin removes its page and server. To stop the original-sidebar companion while leaving the official app open:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\CodexNestedConversations\scripts\Stop.ps1"
 ```
 
-From the project source directory, preview and run the uninstaller:
+For removal, unregister the local plugin before uninstalling its source installation. The project uninstaller sends its marked program directory and shortcut to the Recycle Bin and retains project data. It does not delete user chats or force the official app to close. See [module removal](docs/independent-modules.md#remove-and-distribute) and the [user guide](docs/user-guide.md).
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -WhatIf
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
-```
+## Development
 
-The uninstaller stops the companion and sends the project program directory and its shortcut to the Windows Recycle Bin, retaining separate project data. It recognizes both the current generated shortcut and the project's former entry. If the shortcut's target or arguments were actually changed, uninstall stops and preserves it for review. After uninstalling, quit and reopen the official app normally to close the temporary local debugging endpoint used by the enhancement. The uninstaller does not force the official window to close.
-
-## How it works
-
-The launcher starts the installed official app with a temporary debugging endpoint bound to the local loopback address. A separate companion verifies the endpoint's owning process and loads the interface modules into the running window. The project does not distribute or modify the official installation or its update mechanism. Relationship discovery reads the relevant local data with read-only database connections; generated relationship and preference data stays in the project's separate local data directory.
-
-This approach depends on implementation details of the official app. A future app update can change the UI or local data format and require adaptation. See [runtime integration](docs/runtime-integration.md) and [testing](docs/testing.md) for implementation details and recorded checks.
-
-## Contributing
-
-Issues, reproducible reports and pull requests are welcome. Please include the app and project versions, the steps taken and the observed result. Remove chat titles, IDs, account information, local data and other private material before sharing logs or screenshots. Run the applicable checks before submitting changes:
+Mastery-L99 defined the workflow and tested it on Windows, with Codex assisting development. The project’s own code is MIT-licensed. Bundled archive-page components retain their upstream licenses. [Attribution and dependencies](NOTICE.md)
 
 ```powershell
 npm run test:runtime
@@ -88,4 +103,4 @@ npm test
 npm run audit:release
 ```
 
-`npm test` uses temporary installation directories and does not start the official app. The release audit helps catch common sensitive files and paths; review contributions as well. See [testing](docs/testing.md) and [publishing](docs/publishing.md) for details.
+See [runtime integration](docs/runtime-integration.md), [testing](docs/testing.md), and [third-party notices](NOTICE.md). Contributions should include versions, reproduction steps, and the observed result. Remove chat content, titles, identifiers, account information, and personal paths from shared logs and screenshots.

@@ -1,5 +1,11 @@
 # Release notes / 发行说明
 
+## 0.3.0-preview.5
+
+本版提供完整源码包和可独立安装的归档插件包。原侧栏在增强入口启动后，按父子关系显示最近聊天和项目聊天。批量归档支持筛选、跨分支勾选，确认页分别列出聊天和受影响的后台任务。工具栏能通过当前窗口归档它自己持有的空闲聊天。已归档数量按本机回读结果显示。
+
+The full source package adds the nested sidebar and toolbar archive. The smaller marketplace ZIP installs the standalone archive page using the official plugin CLI. The sidebar needs the project's desktop shortcut. Both packages use the user's existing Windows client and account. The tested official package is `26.1027.3384.0`. See the [English guide](quickstart.md) or [中文指南](quickstart.zh-CN.md).
+
 ## 0.2.0-preview.1
 
 ### English

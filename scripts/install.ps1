@@ -1,4 +1,4 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
+﻿[CmdletBinding(SupportsShouldProcess = $true)]
 param([string]$InstallDir, [string]$DataDir, [switch]$NoShortcut, [switch]$ReuseData)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
@@ -7,6 +7,7 @@ if (-not $DataDir) { $DataDir = Get-CnccDefaultDataDir }
 $taskRepo = Split-Path -Parent $PSScriptRoot
 $taskInstall = Assert-CnccSafePath $InstallDir
 $taskData = Assert-CnccSafePath $DataDir
+$taskSettings = if($taskData -eq (Get-CnccFullPath (Get-CnccDefaultDataDir))){Join-Path $env:USERPROFILE '.codex-nested-conversations\settings'}else{$taskData}
 if ((Test-CnccInside $taskInstall $taskData) -or (Test-CnccInside $taskData $taskInstall)) { throw 'Program and data directories must be separate.' }
 if ((Test-CnccInside $taskInstall $taskRepo) -or (Test-CnccInside $taskRepo $taskInstall) -or (Test-CnccInside $taskData $taskRepo) -or (Test-CnccInside $taskRepo $taskData)) { throw 'Install and data directories must be separate from the source repository.' }
 if (Test-Path -LiteralPath $taskInstall) { throw 'The install directory already exists. No files were overwritten.' }
@@ -24,14 +25,14 @@ $taskMissing = @($taskManifest.files | Where-Object { -not (Test-Path -LiteralPa
 if ($taskMissing.Count -gt 0) { throw ('Runtime sources are not integrated: ' + ($taskMissing -join ', ')) }
 $taskDeps = Get-CnccDependencies $taskRepo
 $taskPackage = Get-Content -LiteralPath (Join-Path $taskRepo 'package.json') -Raw | ConvertFrom-Json
-foreach ($taskRequired in @('package.json', 'package-lock.json', 'runtime-manifest.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE', 'scripts\Start.ps1', 'scripts\Stop.ps1', 'scripts\lib\Common.ps1')) {
+foreach ($taskRequired in @('package.json', 'package-lock.json', 'runtime-manifest.json', 'plugin.json', 'mcp.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE', 'scripts\Start.ps1', 'scripts\Stop.ps1', 'scripts\lib\Common.ps1')) {
     $taskRequiredPath = Join-Path $taskRepo $taskRequired
     $null = Assert-CnccSafePath $taskRequiredPath
     if (-not (Test-Path -LiteralPath $taskRequiredPath -PathType Leaf)) { throw ('Required distribution file missing: ' + $taskRequired) }
 }
 foreach ($taskDirectory in @('scripts', 'docs')) {
     if (-not (Test-Path -LiteralPath (Join-Path $taskRepo $taskDirectory) -PathType Container)) { throw ('Required distribution directory missing: ' + $taskDirectory) }
-    if (@(Get-ChildItem -LiteralPath (Join-Path $taskRepo $taskDirectory) -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) { throw 'Distribution directories must not contain reparse points.' }
+    Assert-CnccPlainTree (Join-Path $taskRepo $taskDirectory)
 }
 $taskShortcut = $null
 if (-not $NoShortcut) {
@@ -46,23 +47,48 @@ if (-not $PSCmdlet.ShouldProcess($taskInstall, 'Create a separate enhancement in
 # Refuse existing directories above; no upgrade, replacement, official app edit, or auto-download occurs.
 $null = New-Item -ItemType Directory -Path $taskInstall
 $taskMarkerPath = Join-Path $taskInstall '.cncc-install.json'
-$taskMarker = [ordered]@{ schemaVersion = 1; project = $script:CnccId; version = $taskPackage.version; state = 'installing'; installedAt = (Get-Date).ToString('o'); installDir = $taskInstall; dataDir = $taskData; node = $taskDeps.Node; python = $taskDeps.Python; shortcut = $taskShortcut; runtime = $taskManifest }
+$taskMarker = [ordered]@{ schemaVersion = 1; project = $script:CnccId; version = $taskPackage.version; state = 'installing'; installedAt = (Get-Date).ToString('o'); installDir = $taskInstall; dataDir = $taskData; settingsDir = $taskSettings; node = $taskDeps.Node; python = $taskDeps.Python; shortcut = $taskShortcut; runtime = $taskManifest }
 $taskMarker | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $taskMarkerPath -Encoding UTF8
 try {
 $null = New-Item -ItemType Directory -Path (Join-Path $taskInstall 'app')
 $null = New-Item -ItemType Directory -Path (Join-Path $taskInstall 'node_modules')
 Copy-Item -LiteralPath (Join-Path $taskRepo 'scripts') -Destination $taskInstall -Recurse
 Copy-Item -LiteralPath (Join-Path $taskRepo 'docs') -Destination $taskInstall -Recurse
-foreach ($taskFile in @('package.json', 'package-lock.json', 'runtime-manifest.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE')) {
+foreach ($taskFile in @('package.json', 'package-lock.json', 'runtime-manifest.json', 'plugin.json', 'README.md', 'README.zh-CN.md', 'NOTICE.md', 'LICENSE')) {
     Copy-Item -LiteralPath (Join-Path $taskRepo $taskFile) -Destination $taskInstall
 }
+$taskMcp = [ordered]@{
+    '$schema' = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json'
+    mcpServers = [ordered]@{
+        'conversation-manager' = [ordered]@{
+            type = 'stdio'; command = 'node'; args = @('${PLUGIN_ROOT}/app/archive-server.cjs'); cwd = '${PLUGIN_ROOT}'
+            env = [ordered]@{CNCC_DATA_DIR = $taskData; CNCC_SETTINGS_DIR = $taskSettings; CNCC_PYTHON = $taskDeps.Python; PATH = ((Split-Path -Parent $taskDeps.Node)+';'+$env:PATH)}
+        }
+    }
+}
+[IO.File]::WriteAllText((Join-Path $taskInstall 'mcp.json'),($taskMcp | ConvertTo-Json -Depth 8),(New-Object Text.UTF8Encoding($false)))
 foreach ($taskFile in $taskManifest.files) {
     $taskTarget = Join-Path (Join-Path $taskInstall 'app') $taskFile
     $taskParent = Split-Path -Parent $taskTarget
     if (-not (Test-Path -LiteralPath $taskParent)) { $null = New-Item -ItemType Directory -Path $taskParent -Force }
     Copy-Item -LiteralPath (Join-Path (Join-Path $taskRepo 'src') $taskFile) -Destination $taskTarget
 }
-foreach ($taskName in $taskDeps.DependencyDirs) { Copy-Item -LiteralPath (Join-Path (Join-Path $taskRepo 'node_modules') $taskName) -Destination (Join-Path $taskInstall 'node_modules') -Recurse }
+foreach ($taskName in $taskDeps.DependencyDirs) {
+    $taskDepSource = Join-Path (Join-Path $taskRepo 'node_modules') $taskName
+    $taskDepTarget = Join-Path (Join-Path $taskInstall 'node_modules') $taskName
+    # Windows PowerShell 5.1 cannot copy some long paths in Playwright.
+    & $taskDeps.Node -e "require('node:fs').cpSync(process.argv[1], process.argv[2], {recursive:true, force:false, errorOnExist:true})" $taskDepSource $taskDepTarget
+    if ($LASTEXITCODE -ne 0) { throw ('Could not copy dependency: ' + $taskName) }
+}
+$taskPlugin = Join-Path $taskInstall 'plugin'
+& $taskDeps.Node (Join-Path $taskRepo 'scripts\build-plugin.cjs') --output-dir $taskPlugin
+if ($LASTEXITCODE -ne 0) { throw 'The independent plugin package could not be prepared.' }
+$taskMcp.mcpServers.'conversation-manager'.args = @('${PLUGIN_ROOT}/src/archive-server.cjs')
+[IO.File]::WriteAllText((Join-Path $taskPlugin 'mcp.json'),($taskMcp | ConvertTo-Json -Depth 8),(New-Object Text.UTF8Encoding($false)))
+$taskMarketplaceDir = Join-Path $taskInstall '.agents\plugins'
+$null = New-Item -ItemType Directory -Path $taskMarketplaceDir -Force
+$taskMarketplace = [ordered]@{name='codex-nested-local';interface=@{displayName='Codex 对话管理 · 本地'};plugins=@(@{name=$taskPackage.name;source=@{source='local';path='./plugin'};policy=@{installation='AVAILABLE';authentication='ON_INSTALL'};category='Productivity'})}
+[IO.File]::WriteAllText((Join-Path $taskMarketplaceDir 'marketplace.json'),($taskMarketplace | ConvertTo-Json -Depth 8),(New-Object Text.UTF8Encoding($false)))
 if (-not $taskDataExists) {
     $null = New-Item -ItemType Directory -Path $taskData
     [ordered]@{ schemaVersion = 1; project = $script:CnccId; createdAt = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskData '.cncc-data.json') -Encoding UTF8

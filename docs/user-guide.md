@@ -8,14 +8,14 @@ The enhancement runs alongside the official client using the same account and lo
 
 ## Requirements
 
-- Windows 10 or 11 and the official Codex desktop app. The tested package version is `26.1023.6621.0`; other versions may behave differently.
+- Windows 10 or 11 and the official Codex desktop app. The tested package version is `26.1027.3384.0`; other versions may behave differently.
 - Node.js 22 or later, npm, and Python 3.10 or later, available on your `PATH`.
-- A copy of this repository, including its `src`, `scripts`, and `docs` directories. Download the [0.2.0-preview.1 source ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.2.0-preview.1/codex-nested-conversations-0.2.0-preview.1-source.zip) or clone the [repository](https://github.com/Mastery-L99/codex-nested-conversations), then open PowerShell in its root directory.
+- A copy of this repository, including its `src`, `scripts`, and `docs` directories. Download the [0.3.0-preview.5 source ZIP](https://github.com/Mastery-L99/codex-nested-conversations/releases/download/v0.3.0-preview.5/codex-nested-conversations-0.3.0-preview.5-source.zip) or clone the [repository](https://github.com/Mastery-L99/codex-nested-conversations), then open PowerShell in its root directory.
 
 The installer needs the public Playwright `1.64.1` package from the lockfile. It connects to the existing desktop app and does not need a Playwright browser download. The execution-policy option used below applies only to that PowerShell process; it does not change the system execution policy.
 
 ```powershell
-npm ci --ignore-scripts
+npm.cmd ci --omit=dev --ignore-scripts
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\doctor.ps1
 ```
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codex-nested-conversations",
+  "version": "0.3.0-preview.5",
+  "description": "Local Windows conversation management: an independent bulk archive MCP App and controls for the separately loaded nested conversation view.",
+  "author": {
+    "name": "Codex Nested Conversations contributors"
+  },
+  "repository": "https://github.com/Mastery-L99/codex-nested-conversations",
+  "license": "MIT",
+  "keywords": ["codex", "conversations", "archive", "windows", "mcp-app"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Codex 对话管理",
+        "shortDescription": "独立批量归档与嵌套显示开关",
+        "longDescription": "在本机桌面端打开批量归档面板，筛选、多选并检查完整范围后提交归档；归档和嵌套显示分别启停。归档面板独立于原列表增强运行。原列表的嵌套显示仍需单独加载适配器，安装本插件不会自动改造官方侧栏。仅处理当前 Windows 用户的本机 Codex 聊天。",
+        "developerName": "Codex Nested Conversations contributors",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "defaultPrompt": "打开 Codex 对话管理面板，让我筛选聊天并检查归档范围。"
+      }
+    }
+  }
+}

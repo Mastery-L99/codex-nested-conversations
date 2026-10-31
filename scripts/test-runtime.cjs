@@ -25,6 +25,22 @@ const fixtures = [
   ['test-nested-ui.cjs', false],
   ['test-cascade-actions.cjs', false],
   ['test-cascade-shortcut.cjs', false],
+  ['test-bulk-archive.cjs', false],
+  ['test-batch-plan.cjs', false],
+  ['test-connection.cjs', true],
+  ['test-autoload-bootstrap.cjs', true],
+  ['test-module-state.cjs', true],
+  ['test-ui-modules.cjs', true],
+  ['test-runtime-lifecycle.cjs', true],
+  ['test-plugin-package.cjs', true],
+  ['test-archive-core.cjs', true],
+  ['test-archive-app-server.cjs', true],
+  ['test-desktop-archive.cjs', true],
+  ['test-archive-server.cjs', true],
+  ['test-toolbar-archive.cjs', true],
+  ['test-archive-catalog.cjs', true],
+  ['test-archive-panel.cjs', false],
+  ['test-python-catalog.cjs', true],
   ['test-event-index.cjs', true]
 ];
 for (const [file, nodeTest] of fixtures) {
@@ -37,4 +53,4 @@ for (const [file, nodeTest] of fixtures) {
   if (result.error) console.error(result.error.message);
   if (result.error || result.status !== 0) process.exit(result.status || 1);
 }
-console.log('\nAll four synthetic runtime suites passed. No official app or profile was accessed.');
+console.log('\nAll synthetic runtime suites passed. No official app or profile was accessed.');

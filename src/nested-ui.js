@@ -22,6 +22,7 @@
   const hiddenNativeDisplay = new WeakMap();
   const nodes = new Set();
   let observer, timer, disposed = false, reconciling = false;
+  let treeEnabled = window.__codexNestedUiOptions?.enabled !== false;
   let menuLease = null, menuContext = null, observedMenuTrigger = null, menuDirty = false;
   let last = { installed: true, groups: 0, childItems: 0, hiddenFlatRows: 0, errors: [] };
 
@@ -92,7 +93,7 @@
     if(canonical.size!==1 || ids.size!==1) {aliasCandidate=null;return;}
     const real=[...canonical][0].toLowerCase(), temporary=[...ids][0];
     if(!TEMP_ID.test(temporary??'')) {aliasCandidate=null;return;}
-    const chat=normalize(window.__codexNestedRelations).flatMap(g=>[g.parent,...g.children]).find(chat=>chat.id.toLowerCase()===real);
+    const chat=knownChat({id:real,title:'',kind:'codex',hostId:'local'});
     if(!chat || selected.some(row=>row.getAttribute('data-app-action-sidebar-thread-title')!==chat.title)) {aliasCandidate=null;return;}
     const temporaryKey=temporary.toLowerCase();
     if(aliases.get(temporaryKey)===real)return;
@@ -150,6 +151,10 @@
   }
   function knownChat(value) {
     if (!validChat(value)) return null;
+    for (const chat of window.__codexNestedRelations?.catalog ?? []) {
+      if (validChat(chat) && key(chat) === key(value)) return chat;
+    }
+    if (Array.isArray(window.__codexNestedRelations?.catalog)) return null;
     for (const group of normalize(window.__codexNestedRelations)) {
       for (const chat of [group.parent, ...group.children]) if (key(chat) === key(value)) return chat;
     }
@@ -410,6 +415,10 @@
       last = { installed: true, groups: 0, childItems: 0, hiddenFlatRows: 0, errors: [] };
       const root = document.querySelector(ROOT);
       if (!root) { last.state = 'sidebar_not_available'; return; }
+      // Identity and native-menu APIs remain available when tree rendering is
+      // disabled. Bulk archive does not need the folder-like representation.
+      learnVisibleIdentity(root);
+      if (!treeEnabled) { last.state = 'bridge_only'; return; }
       const groups = normalize(window.__codexNestedRelations);
       if (!groups.length) { last.state = 'no_verified_local_relations'; return; }
       const rowsById = indexRows(root), byParent = new Map(groups.map(group => [key(group.parent), group]));
@@ -470,6 +479,7 @@
   });
   const api = {
     apply(data) { if (data !== undefined) window.__codexNestedRelations = data; if (!disposed) reconcile(); return api.inspect(); },
+    setEnabled(value) { treeEnabled = value === true; if (!disposed) reconcile(); return api.inspect(); },
     dispose() {
       if (disposed) return;
       disposed = true; observer.disconnect(); window.clearTimeout(timer); window.clearTimeout(aliasTimer); timer = null;
@@ -484,7 +494,7 @@
       restore();
       last = { installed: false, state: 'disposed', groups: 0, childItems: 0, hiddenFlatRows: 0, errors: [] };
     },
-    inspect() { return { ...last, errors: [...last.errors], nativeMenuOpen: !!currentMenuContext() }; },
+    inspect() { return { ...last, enabled:treeEnabled, errors: [...last.errors], nativeMenuOpen: !!currentMenuContext() }; },
     openNativeMenu,
     closeNativeMenu,
     getMenuContext: currentMenuContext,

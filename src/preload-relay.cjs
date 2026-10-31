@@ -42,9 +42,15 @@ async function createPreloadRelay(page){
     return results;
   },async stop(){
     stopped=true;
-    for(const context of contexts.values())if(context.name==='Electron Isolated Context'&&context.auxData?.frameId===frameId)
-      await session.send('Runtime.evaluate',{expression:'window.__codexNestedPreloadRelay?.dispose()',contextId:context.id}).catch(()=>{});
+    const errors=[];
+    for(const context of contexts.values())if(context.name==='Electron Isolated Context'&&context.auxData?.frameId===frameId){
+      try {
+        const result=await session.send('Runtime.evaluate',{expression:'(()=>{window.__codexNestedPreloadRelay?.dispose();return window.__codexNestedPreloadRelay?.inspect()?.installed!==true})()',contextId:context.id,returnByValue:true});
+        if(result.exceptionDetails||result.result.value!==true)errors.push('Native shortcut relay was not restored');
+      } catch(error) {if(contexts.has(context.id)&&!page.isClosed())errors.push(error.message);}
+    }
     await session.detach().catch(()=>{});
+    return {restored:errors.length===0,errors};
   }};
 }
 module.exports={createPreloadRelay,relaySource};

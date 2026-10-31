@@ -51,7 +51,8 @@
     const preferenceSignature=JSON.stringify(preferences);
     if(preferenceSignature!==lastPreferences){lastPreferences=preferenceSignature;notify('preferences',preferences);}
     const cascade=window.__codexNestedCascade?.inspect();
-    const interaction={busy:!!cascade?.busy,dialogOpen:!!cascade?.dialogOpen,previewOpen:!!cascade?.previewOpen,
+    const bulk=window.__codexNestedBulk?.inspect();
+    const interaction={busy:!!cascade?.busy||!!bulk?.previewPending,dialogOpen:!!cascade?.dialogOpen||!!bulk?.dialogOpen,previewOpen:!!cascade?.previewOpen,
       menuOpen:!!window.__codexNestedRuntime?.inspect().nativeMenuOpen||[...document.querySelectorAll('[role="menu"]')].some(e=>e.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}))};
     const signature=JSON.stringify(interaction);
     if(signature!==lastInteraction){lastInteraction=signature;notify('interaction',interaction);}

@@ -1,6 +1,6 @@
 # FAQ
 
-For `0.2.0-preview.1`. See the [Windows quick start](quickstart.md) for commands.
+For `0.3.0-preview.5`. See the [Windows quick start](quickstart.md) for commands.
 
 ## Doctor reports missing dependencies or the official app
 
@@ -12,7 +12,7 @@ The installer refuses to overwrite an existing program directory or same-named d
 
 ## The list is still flat after starting
 
-The ordinary official entry may bypass the enhancement, including a pinned official Start-menu icon. Exit through Codex **File → Exit**, then use the dedicated desktop shortcut or the `Start.ps1` command in the quick start. The first start builds a relationship index; the tree uses actual create or fork relationships. Check that the parent is in Recents or the relevant project. Run `doctor.ps1` and check the official app version: this release was tested against package `26.1023.6621.0`; an official update can change the UI or local data structure.
+The ordinary official entry may bypass the enhancement, including a pinned official Start-menu icon. Exit through Codex **File → Exit**, then use the dedicated desktop shortcut or the `Start.ps1` command in the quick start. The first start builds a relationship index; the tree uses actual create or fork relationships. Check that the parent is in Recents or the relevant project. Run `doctor.ps1` and check the official app version: this release was tested against package `26.1027.3384.0`; an official update can change the UI or local data structure.
 
 To keep using your usual pinned position, replace the old official pin once with the enhancement entry and move it where you want it. The same name or icon does not redirect an existing pin. Official All apps entries, protocol links and automatic startup can still bypass the enhancement. See the [user guide](user-guide.md).
 
